@@ -25,7 +25,8 @@ type
     property Length: Double read FLength write FLength;
   end;
 
-  // Nested class for supplier information
+  [MarshallOption( SerializeProperty )]
+  [MarshallOption( SerializeEmptyAsNull )]
   TSupplier = class
   private
     FID: Integer;
