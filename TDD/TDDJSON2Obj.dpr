@@ -19,8 +19,8 @@ uses
   ClassSerializationTest in 'ClassSerializationTest.pas',
   MockUtils in 'MockUtils.pas',
   Product in 'Product.pas',
-  Other in 'Other.pas',
-  REST.Json2 in '..\REST.Json2.pas';
+  Other in 'Other.pas' {keep comment here to protect the following conditional from being removed by the IDE when adding a unit},
+  JSON2Obj in '..\JSON2Obj.pas';
 
 { keep comment here to protect the following conditional from being removed by the IDE when adding a unit }
 {$IFNDEF TESTINSIGHT}
