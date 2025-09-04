@@ -298,13 +298,38 @@ begin
 end;
 
 procedure TClassSerializationTest.DeserializeEnumWithoutIntegerContractTest();
+var
+  LObjWithoutContract: TEnumNoContractRepresentation;
 begin
+  TJson2
+    .Instance
+    .Configure( [ SerializeField, SerializeEnumAsInteger ] );
+
+  LObjWithoutContract :=
+    TJson2.JsonTextToObject<TEnumNoContractRepresentation>('{"StatusObj":0}');
+  Assert.AreEqual(LObjWithoutContract.FStatus, osCreated);
+
+  LObjWithoutContract :=
+    TJson2.JsonTextToObject<TEnumNoContractRepresentation>('{"StatusObj":1}');
+  Assert.AreEqual(LObjWithoutContract.FStatus, osLoaded);
+
+  LObjWithoutContract :=
+    TJson2.JsonTextToObject<TEnumNoContractRepresentation>('{"StatusObj":2}');
+  Assert.AreEqual(LObjWithoutContract.FStatus, osUnload);
+
+  LObjWithoutContract :=
+    TJson2.JsonTextToObject<TEnumNoContractRepresentation>('{"StatusObj":3}');
+  Assert.AreEqual(LObjWithoutContract.FStatus, osDestroyed);
 end;
 
 procedure TClassSerializationTest.DeserializeEnumWithoutStringContractTest();
 var
   LObjWithoutContract: TEnumNoContractRepresentation;
 begin
+  TJson2
+    .Instance
+    .Configure( [ SerializeField, SerializeEnumAsString ] );
+
   LObjWithoutContract :=
     TJson2.JsonTextToObject<TEnumNoContractRepresentation>('{"StatusObj":"osCreated"}');
   Assert.AreEqual(LObjWithoutContract.FStatus, osCreated);

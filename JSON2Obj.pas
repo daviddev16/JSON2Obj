@@ -33,6 +33,7 @@ type
     private
       procedure ToState(AKind: TMarshallOptionKind; AState: Boolean);
     public
+      procedure CloneFrom(AOtherMarshallFlags: TMarshallFlags);
       procedure Setup(AKinds: TMarshallOptionKindArray);
       procedure Up(AKind: TMarshallOptionKind);
       procedure Down(AKind: TMarshallOptionKind);
@@ -68,6 +69,9 @@ type
     public
       property Name: String read FName;
     end;
+
+  TransientAttribute = class( TCustomAttribute )
+  end;
 
   TTypeInfoRequiredAttribute = class( TCustomAttribute )
     private
@@ -236,7 +240,6 @@ type
       FGlobalMarhsallFlags: TMarshallFlags;
       FRttiTypeHandlerMap: TTypeInfoIndexer<TRttiTypeHandler>;
       FEnumTypeContractMap: TTypeInfoIndexer<TEnumTypeContract>;
-      FDefaultOptions: TArray<TMarshallOptionKind>;
     protected
       property GlobalMarhsallFlags: TMarshallFlags read FGlobalMarhsallFlags;
     private
@@ -248,13 +251,13 @@ type
       class constructor Create();
       class destructor Destroy();
     public
+      class procedure Invalidate();
       class function JsonArrayToList<T: class>(AJSONArray: TJSONArray): TList<T>;
       class function JsonTextToObject<T: class>(AJSONText: String): T;
       class function ObjectToJsonText<T: class>(AObj: T): String; overload;
       class function ObjectToJsonText(AObj: TObject): String; overload;
       class function JsonToObject<T: class>(AJSONObject: TJSONObject): T;
       class function ObjectToJson<T: class>(AObj: T): TJSONObject;
-      class procedure SetDefaultKinds(AKinds: TArray<TMarshallOptionKind>);
     private
       function StringToDateTime(AText: String): TDateTime;
       function DateTimeToString(ADateTime: TDateTime): String;
@@ -286,9 +289,8 @@ type
                                    ARttiDataMember: TRttiMember);
       function CanHandleBucket(ABucketName: String): Boolean;
       function AsRttiType(ATypeInfo: PTypeInfo): TRttiType;
-      function GetEnumTypeContract(ATypInfo: PTypeInfo): TEnumTypeContract;
+      function GetEnumTypeContract(ATypeInfo: PTypeInfo): TEnumTypeContract;
       function GetRttiTypeHandler(ATypInfo: PTypeInfo): TRttiTypeHandler;
-      function GetOptions(ARttiType: TRttiType): TArray<TMarshallOptionKind>;
       function ExtractJSOName(ARttiDataMember: TRttiMember): String;
       procedure ExtractRttiProperties(ARttiType: TRttiType;
                                       ARttiTypeHandler: TRttiTypeHandler);
@@ -297,6 +299,7 @@ type
     public
       procedure Configure(AKinds: TMarshallOptionKindArray); overload;
     public
+      procedure InvalidateCache();
       function SerializeObject(AObject: TObject): TJSONValue;
       function Serialize<T: class>(AObject: T): TJSONObject;
       function DeserializeObject(AJSONObject: TJSONObject;
@@ -375,7 +378,7 @@ begin
 
   LRttiTypeHandler := GetRttiTypeHandler( ATypeInfo );
   LInstance := LRttiTypeHandler.CreateNewObject();
-  
+
   for var LRttiBucketEntry in LRttiTypeHandler.RttiBuckets do
   begin
     LBucketName := LRttiBucketEntry.Key;
@@ -434,7 +437,7 @@ begin
       LValue := LRttiBucket.RttiAccessor.Get( AObject );
       LJSONObject.AddPair( LBucketName, ToJSONValue( LValue,
                                                      LRttiTypeHandler ) );
-    end;    
+    end;
   end;
 
   Result := LJSONObject;
@@ -769,16 +772,28 @@ begin
   Result := LTypeRttiHandler;
 end;
 
-function TJson2.GetEnumTypeContract(ATypInfo: PTypeInfo): TEnumTypeContract;
+function TJson2.GetEnumTypeContract(ATypeInfo: PTypeInfo): TEnumTypeContract;
 var
   LEnumTypeContract: TEnumTypeContract;
+  LOrdinal: Int64;
+  LRttiEnumType: TRttiEnumerationType;
+  LDefaultEnumName: String;
 begin
-  if FEnumTypeContractMap.TryGetValue( ATypInfo,
+  if FEnumTypeContractMap.TryGetValue( ATypeInfo,
                                        LEnumTypeContract ) then
     Exit( LEnumTypeContract );
 
   LEnumTypeContract := TEnumTypeContract.Create();
-  FEnumTypeContractMap.Add( ATypInfo, LEnumTypeContract );
+  LRttiEnumType := TRttiEnumerationType( FRttiContext.GetType( ATypeInfo ) );
+
+  for LOrdinal := LRttiEnumType.MinValue to LRttiEnumType.MaxValue do
+  begin
+    LDefaultEnumName := GetEnumName( ATypeInfo, LOrdinal );
+    LEnumTypeContract.StringMapper.AddEnumContract( LDefaultEnumName, LOrdinal );
+    LEnumTypeContract.IntegerMapper.AddEnumContract( LOrdinal, LOrdinal );
+  end;
+
+  FEnumTypeContractMap.Add( ATypeInfo, LEnumTypeContract );
 
   Result := LEnumTypeContract;
 end;
@@ -817,6 +832,9 @@ begin
   LBucketName := ExtractJSOName( ARttiDataMember );
 
   if not CanHandleBucket( LBucketName ) then
+    Exit;
+
+  if ARttiDataMember.HasAttribute<TransientAttribute> then
     Exit;
 
   LIsArray := False;
@@ -867,22 +885,6 @@ begin
                             [ ARttiMember.Name ]);
 end;
 
-function TJson2.GetOptions(ARttiType: TRttiType): TArray<TMarshallOptionKind>;
-var
-  LKindList: TList<TMarshallOptionKind>;
-begin
-  LKindList := TList<TMarshallOptionKind>.Create();
-  try
-    for var LAttribute in ARttiType.GetAttributes() do
-      if LAttribute is MarshallOptionAttribute then
-        LKindList.Add( ( LAttribute as MarshallOptionAttribute ).Kind );
-
-    Result := LKindList.ToArray;
-  finally
-    LKindList.Free();
-  end;
-end;
-
 function TJson2.StringToDateTime(AText: String): TDateTime;
 var
   LFormatSettings: TFormatSettings;
@@ -892,7 +894,7 @@ begin
   LFormatSettings.TimeSeparator := ':';
   LFormatSettings.ShortDateFormat := 'yyyy-mm-dd';
   LFormatSettings.ShortTimeFormat := 'hh:nn:ss';
-  Result := StrToDateTime( StringReplace( AText, 'T', ' ', [] ), 
+  Result := StrToDateTime( StringReplace( AText, 'T', ' ', [] ),
                            LFormatSettings );
 end;
 
@@ -908,8 +910,12 @@ end;
 
 procedure TJson2.Configure(AKinds: TMarshallOptionKindArray);
 begin
-  if Assigned( FGlobalMarhsallFlags ) then
-    FGlobalMarhsallFlags.Setup( AKinds );
+  try
+    if Assigned( FGlobalMarhsallFlags ) then
+      FGlobalMarhsallFlags.Setup( AKinds );
+  finally
+    Invalidate();
+  end;
 end;
 
 function TJson2.ExtractJSOName(ARttiDataMember: TRttiMember): String;
@@ -950,11 +956,23 @@ begin
   Result := TJSONNull.Create();
 end;
 
+procedure TJson2.InvalidateCache();
+begin
+  FRWSync.BeginWrite();
+  try
+    FRttiTypeHandlerMap.Clear();
+    FEnumTypeContractMap.Clear();
+  finally
+    FRWSync.EndWrite();
+  end;
+end;
+
 destructor TJson2.Destroy();
 begin
   FreeAssigned( FRttiTypeHandlerMap );
   FreeAssigned( FEnumTypeContractMap );
   FRttiContext.Free();
+  FGlobalMarhsallFlags.Free();
   FRWSync := nil;
   inherited;
 end;
@@ -1109,6 +1127,7 @@ begin
     FBucketMap.AddOrSetValue( LRttiBucket.Key, [] );
   end;
   FBucketMap.Free();
+  FMarshallFlags.Free();
   inherited;
 end;
 
@@ -1205,6 +1224,14 @@ begin
   inherited;
 end;
 
+procedure TMarshallFlags.CloneFrom(AOtherMarshallFlags: TMarshallFlags);
+begin
+  ResetAllBits();
+  Size := AOtherMarshallFlags.Size;
+  for var LBit := 0 to Size - 1 do
+    Bits[ LBit ] := AOtherMarshallFlags[ LBit ];
+end;
+
 procedure TMarshallFlags.Down(AKind: TMarshallOptionKind);
 begin
   ToState( AKind, False );
@@ -1267,7 +1294,9 @@ begin
   if Assigned( LLocalMarshallFlags ) then
     Exit( LLocalMarshallFlags );
 
-  Result := ( TJson2.FSingleton.GlobalMarhsallFlags );
+  LLocalMarshallFlags := TMarshallFlags.Create();
+  LLocalMarshallFlags.CloneFrom( TJson2.FSingleton.GlobalMarhsallFlags );
+  Result := LLocalMarshallFlags;
 end;
 
 {$EndRegion 'TTypeFlagsFactory'}
@@ -1355,10 +1384,9 @@ begin
   Result := ( FSingleton.Serialize<T>( AObj ) );
 end;
 
-class procedure TJson2.SetDefaultKinds(AKinds: TArray<TMarshallOptionKind>);
+class procedure TJson2.Invalidate();
 begin
-  if AKinds <> nil then
-    FSingleton.FDefaultOptions := AKinds;
+  FSingleton.InvalidateCache();
 end;
 
 class constructor TJson2.Create();
@@ -1368,9 +1396,9 @@ end;
 
 class destructor TJson2.Destroy();
 begin
+  FSingleton.Free();
 end;
 
 {$EndRegion 'Exposed static functions' }
-
 
 end.
