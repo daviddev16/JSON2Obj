@@ -22,6 +22,11 @@ type
       [Key('StatusObj')] FStatus: TObjectStatus;
     end;
 
+  TEnumNoContractRepresentation = class
+    public
+      [Key('StatusObj')] FStatus: TObjectStatus;
+    end;
+
   TWithStrObj = class
     public
       [Key('logText')] FLog: String;
@@ -41,6 +46,14 @@ type
     public
       [Key('FieldKey')]
       FPrivateField: String;
+    end;
+
+  [MarshallOption( SerializeField )]
+  TObjWithTransient = class
+    public
+      [Key('accessKey')] FAccessKey: String;
+      [Transient] FAccessAuthToken: String;
+      [Transient] FAccessRefreshToken: String;
     end;
 
 implementation
