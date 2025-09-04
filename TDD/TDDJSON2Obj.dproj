@@ -113,8 +113,10 @@
         <DCCReference Include="ClassSerializationTest.pas"/>
         <DCCReference Include="MockUtils.pas"/>
         <DCCReference Include="Product.pas"/>
-        <DCCReference Include="Other.pas"/>
-        <DCCReference Include="..\REST.Json2.pas"/>
+        <DCCReference Include="Other.pas">
+            <Form>keep comment here to protect the following conditional from being removed by the IDE when adding a unit</Form>
+        </DCCReference>
+        <DCCReference Include="..\JSON2Obj.pas"/>
         <RcItem Include="Mock\MCK_001_Product.json">
             <ContainerId>ResourceItem</ContainerId>
             <ResourceType>RCDATA</ResourceType>
