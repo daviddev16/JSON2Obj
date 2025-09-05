@@ -4,7 +4,8 @@ interface
 
 uses
   JSON2Obj,
-  DUnitX.TestFramework;
+  DUnitX.TestFramework,
+  System.Generics.Collections;
 
 type
   TObjectStatus = (osCreated, osLoaded, osUnload, osDestroyed);
@@ -54,6 +55,13 @@ type
       [Key('accessKey')] FAccessKey: String;
       [Transient] FAccessAuthToken: String;
       [Transient] FAccessRefreshToken: String;
+    end;
+
+  [MarshallOption( SerializeField )]
+  [MarshallOption( SerializeEnumAsString )]
+  TObjWithTList = class
+    public
+      ListOfObjectStatus: TList<TObjectStatus>;
     end;
 
 implementation

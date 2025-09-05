@@ -151,7 +151,7 @@ type
 
   TRttiTypeHandler = class;
 
-  TRttiBucket = class sealed
+  TRttiBucket = class
     strict private
       FInnerRttiType: TRttiType;
       FOuterRttiType: TRttiType;
@@ -171,6 +171,23 @@ type
                          AOuterRttiType: TRttiType;
                          ARttiAccessor: IRttiAccessor;
                          AIsArray: Boolean; AIsEnum: Boolean);
+    end;
+
+  //
+  // Representa um TRttiBucket que retém informação para serialização e
+  // deserialização do tipo : TList<T>.
+  //
+  TGenericListRttiBucket = class( TRttiBucket )
+    strict private
+      FCountRttiProperty: TRttiProperty;
+      FItemRttiProperty: TRttiIndexedProperty;
+    private
+      function GetItemCountOf(AInstance: Pointer): Integer;
+      function GetItemValueOf(AInstance: Pointer; AIndex: Integer): TValue;
+    protected
+      constructor Create(AInnerRttiType: TRttiType;
+                         AOuterRttiType: TRttiType;
+                         ARttiAccessor: IRttiAccessor);
     end;
 
   TRttiBucketDictionary = TOwnedObjectDictionary<String, TArray<TRttiBucket>>;
@@ -259,10 +276,17 @@ type
       class function JsonToObject<T: class>(AJSONObject: TJSONObject): T;
       class function ObjectToJson<T: class>(AObj: T): TJSONObject;
     private
+      function IsClass(ATypeInfo: PTypeInfo; AName: String): Boolean;
       function StringToDateTime(AText: String): TDateTime;
       function DateTimeToString(ADateTime: TDateTime): String;
       function NewJSONNull(): TJSONValue;
-    private
+    private { special types utilities}
+      function ExtractInnerTypeOfTList(ARttiType: TRttiType): TRttiType;
+    private { special types serialization }
+      function GenericListToJSONValue(const [ref] AValue: TValue;
+                                      AGenericListRttiBucket: TGenericListRttiBucket;
+                                      ARttiTypeHandler: TRttiTypeHandler): TJSONValue;
+    private { common types serialization }
       function EnumToJSONValue(const [ref] AValue: TValue;
                                AMarshallFlags: TMarshallFlags): TJSONValue;
       function ArrayToJSONValue(const [ref] AValue: TValue;
@@ -434,9 +458,22 @@ begin
 
     for var LRttiBucket in LRttiBuckets do
     begin
-      LValue := LRttiBucket.RttiAccessor.Get( AObject );
-      LJSONObject.AddPair( LBucketName, ToJSONValue( LValue,
-                                                     LRttiTypeHandler ) );
+      if LRttiBucket is TGenericListRttiBucket then
+      begin
+        LValue := LRttiBucket.RttiAccessor.Get( AObject );
+        LJSONObject.AddPair(
+          LBucketName,
+          GenericListToJSONValue( LValue,
+                                  TGenericListRttiBucket(LRttiBucket),
+                                  LRttiTypeHandler ) );
+
+      end
+      else
+      begin
+        LValue := LRttiBucket.RttiAccessor.Get( AObject );
+        LJSONObject.AddPair( LBucketName, ToJSONValue( LValue,
+                                                       LRttiTypeHandler ) );
+      end;
     end;
   end;
 
@@ -691,6 +728,52 @@ begin
   end;
 end;
 
+function TJson2.GenericListToJSONValue(const [ref] AValue: TValue;
+                                       AGenericListRttiBucket: TGenericListRttiBucket;
+                                       ARttiTypeHandler: TRttiTypeHandler): TJSONValue;
+var
+  LJSONArray: TJSONArray;
+var
+  LGenListInstance: TObject;
+  LItemCount: Integer;
+  LItemValue: TValue;
+  LJSONValue: TJSONValue;
+begin
+  LGenListInstance := AValue.AsObject();
+
+  if not Assigned( LGenListInstance ) then
+  begin
+    if ARttiTypeHandler.MarshallFlags.HasKind( SerializeEmptyAsNull ) then
+      Exit( NewJSONNull() )
+    else
+      Exit( TJSONArray.Create() );
+  end;
+
+  LJSONArray := TJSONArray.Create();
+  try
+    LItemCount := AGenericListRttiBucket
+                      .GetItemCountOf( PByte( LGenListInstance ) );
+
+    for var I := 0 to LItemCount - 1 do
+    begin
+      LItemValue := AGenericListRttiBucket
+                        .GetItemValueOf( PByte( LGenListInstance ), I );
+
+      if LItemValue.IsEmpty then
+        Continue;
+
+      LJSONValue := ToJSONValue( LItemValue, ARttiTypeHandler );
+      LJSONArray.AddElement( LJSONValue );
+    end;
+
+    Result := LJSONArray;
+  except
+    FreeAssigned( LJSONValue );
+    LJSONArray.Free();
+    raise;
+  end;
+end;
+
 function TJson2.EnumToJSONValue(const [ref] AValue: TValue;
                                 AMarshallFlags: TMarshallFlags): TJSONValue;
 var
@@ -822,6 +905,7 @@ var
   LBucketName: String;
   LRttiAccessor: IRttiAccessor;
 begin
+  // LDataType == OuterRttiType
   LDataType := GetRttiTypeOfMember( ARttiDataMember );
 
   // non-contiguous enum não possui TypeInfo.
@@ -843,14 +927,7 @@ begin
 
   LIsEnum := ( LDataType.TypeKind = tkEnumeration );
 
-  if LDataType.TypeKind = tkArray then
-    LInnerRttiType := ( LDataType as TRttiArrayType ).ElementType
-
-  else if LDataType.TypeKind = tkDynArray then
-    LInnerRttiType := ( LDataType as TRttiDynamicArrayType ).ElementType
-
-  else
-    LInnerRttiType := LDataType;
+  LInnerRttiType := nil;
 
   if ARttiDataMember is TRttiProperty then
     LRttiAccessor := TRttiPropertyAccessor
@@ -860,12 +937,39 @@ begin
     LRttiAccessor := TRttiFieldAccessor
                         .Create( TRttiField( ARttiDataMember ) );
 
+  LRttiBucket := nil;
 
-  LRttiBucket := TRttiBucket.Create( LInnerRttiType,
-                                     LDataType,
-                                     LRttiAccessor,
-                                     LIsArray,
-                                     LIsEnum );
+  // Arrays //
+  if LDataType.TypeKind = tkArray then
+    LInnerRttiType := TRttiArrayType( LDataType ).ElementType
+
+  else if LDataType.TypeKind = tkDynArray then
+    LInnerRttiType := TRttiDynamicArrayType( LDataType ).ElementType
+
+  // Special types handling //
+  else if LDataType.TypeKind = tkClass then
+  begin
+    if IsClass( LDataType.Handle, 'TList' ) then
+    begin
+      LInnerRttiType := ExtractInnerTypeOfTList( LDataType );
+      LRttiBucket := TGenericListRttiBucket.Create( LInnerRttiType,
+                                                    LDataType,
+                                                    LRttiAccessor );
+    end
+  end;
+
+  // Fallback //
+  if LInnerRttiType = nil then
+    LInnerRttiType := LDataType;
+
+  if LRttiBucket = nil then
+  begin
+    LRttiBucket := TRttiBucket.Create( LInnerRttiType,
+                                       LDataType,
+                                       LRttiAccessor,
+                                       LIsArray,
+                                       LIsEnum );
+  end;
 
   ARttiTypeHandler.AddRttiBucket( LBucketName, LRttiBucket );
 end;
@@ -944,6 +1048,28 @@ begin
     LJSONMemberName := LKeyAttribute.Name;
 
   Result := LJSONMemberName;
+end;
+
+function TJson2.ExtractInnerTypeOfTList(ARttiType: TRttiType): TRttiType;
+var
+  LRttiMethodOfAdd: TRttiMethod;
+begin
+  LRttiMethodOfAdd := ARttiType.GetMethod( 'Add' );
+
+  if not Assigned( LRttiMethodOfAdd ) then
+    raise Exception.CreateFmt( 'Failed to find Add(...) function for "%s".',
+                               [ ARttiType.Name ] );
+
+  Result := LRttiMethodOfAdd.GetParameters()[0].ParamType;
+  Assert( Result <> nil );
+end;
+
+function TJson2.IsClass(ATypeInfo: PTypeInfo; AName: String): Boolean;
+begin
+  if ATypeInfo = nil then
+    Exit( False );
+
+  Result := String( ATypeInfo.Name ).StartsWith( AName, True );
 end;
 
 function TJson2.AsRttiType(ATypeInfo: PTypeInfo): TRttiType;
@@ -1400,5 +1526,33 @@ begin
 end;
 
 {$EndRegion 'Exposed static functions' }
+
+{ TGenericListRttiBucket }
+
+constructor TGenericListRttiBucket.Create(AInnerRttiType: TRttiType;
+                                          AOuterRttiType: TRttiType;
+                                          ARttiAccessor: IRttiAccessor);
+begin
+  inherited Create( AInnerRttiType, AOuterRttiType,
+                    ARttiAccessor, False, False );
+
+  FCountRttiProperty := AOuterRttiType.GetProperty( 'Count' );
+  Assert( FCountRttiProperty <> nil );
+
+  FItemRttiProperty := AOuterRttiType.GetIndexedProperty( 'Items' );
+  Assert( FItemRttiProperty <> nil );
+end;
+
+function TGenericListRttiBucket.GetItemCountOf(AInstance: Pointer): Integer;
+begin
+  Result := ( FCountRttiProperty.GetValue( AInstance ).AsInteger );
+end;
+
+function TGenericListRttiBucket.GetItemValueOf(AInstance: Pointer;
+                                               AIndex: Integer): TValue;
+begin
+  Result := ( FItemRttiProperty.GetValue( AInstance,
+                                          [ TValue.From<Integer>( AIndex )  ] ) );
+end;
 
 end.

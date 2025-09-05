@@ -8,6 +8,7 @@ uses
   IOUtils,
   System.SysUtils,
   System.Types,
+  System.Generics.Collections,
   DUnitX.TestFramework;
 
 type
@@ -29,6 +30,7 @@ type
     [Test] procedure SerializeEnumWithoutStringContractTest();
     [Test] procedure DeserializeEnumWithoutStringContractTest();
     [Test] procedure SerializeWithTransientFieldTest();
+    [Test] procedure SerializeObjectWithTList();
   end;
 
 implementation
@@ -196,6 +198,24 @@ begin
                      '{"StatusObj":"DESTROYED"}' );
   finally
     LObjWithEnum.Free();
+  end;
+end;
+
+procedure TClassSerializationTest.SerializeObjectWithTList();
+var
+  LWithListObj: TObjWithTList;
+begin
+  LWithListObj := TObjWithTList.Create();
+  try
+    LWithListObj.ListOfObjectStatus := TList<TObjectStatus>.Create();
+    LWithListObj.ListOfObjectStatus.Add(osCreated);
+    LWithListObj.ListOfObjectStatus.Add(osUnload);
+    LWithListObj.ListOfObjectStatus.Add(osLoaded);
+
+    Assert.AreEqual( TJson2.ObjectToJsonText( LWithListObj ),
+                     '{"ListOfObjectStatus":["osCreated","osUnload","osLoaded"]}' );
+  finally
+    LWithListObj.Free();
   end;
 end;
 
