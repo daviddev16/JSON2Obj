@@ -30,7 +30,8 @@ type
     [Test] procedure SerializeEnumWithoutStringContractTest();
     [Test] procedure DeserializeEnumWithoutStringContractTest();
     [Test] procedure SerializeWithTransientFieldTest();
-    [Test] procedure SerializeObjectWithTList();
+    [Test] procedure SerializeObjectEnumWithTList();
+    [Test] procedure DeserializeObjectEnumtWithTList();
   end;
 
 implementation
@@ -124,9 +125,7 @@ procedure TClassSerializationTest.SerializeEnumWithIntegerContractTest();
 var
   LObjWithEnum: TEnumRepresentation;
 begin
-  TJson2
-    .Instance
-    .Configure( [ SerializeField, SerializeEnumAsInteger ] );
+  TJson2.ConfigureGlobal( [ SerializeField, SerializeEnumAsInteger ] );
 
   LObjWithEnum := TEnumRepresentation.Create();
   try
@@ -154,9 +153,7 @@ procedure TClassSerializationTest.DeserializeEnumWithIntegerContractTest();
 var
   LObjWithEnum: TEnumRepresentation;
 begin
-  TJson2
-    .Instance
-    .Configure( [ SerializeField, SerializeEnumAsInteger ] );
+  TJson2.ConfigureGlobal( [ SerializeField, SerializeEnumAsInteger ] );
 
   LObjWithEnum := TJson2.JsonTextToObject<TEnumRepresentation>('{"StatusObj":200}');
   Assert.AreEqual(LObjWithEnum.FStatus, osCreated);
@@ -175,9 +172,7 @@ procedure TClassSerializationTest.SerializeEnumWithStringContractTest();
 var
   LObjWithEnum: TEnumRepresentation;
 begin
-  TJson2
-    .Instance
-    .Configure( [ SerializeField, SerializeEnumAsString ] );
+  TJson2.ConfigureGlobal( [ SerializeField, SerializeEnumAsString ] );
 
   LObjWithEnum := TEnumRepresentation.Create();
   try
@@ -201,7 +196,29 @@ begin
   end;
 end;
 
-procedure TClassSerializationTest.SerializeObjectWithTList();
+procedure TClassSerializationTest.DeserializeObjectEnumtWithTList();
+var
+  LWithListObj: TObjWithTList;
+begin
+  TJson2.ConfigureGlobal( [ SerializeEnumAsString ] );
+
+  LWithListObj := TObjWithTList.Create();
+  try
+    LWithListObj := TJson2.JsonTextToObject<TObjWithTList>(
+      '{"ListOfObjectStatus":["osCreated","osUnload","osLoaded"]}' );
+
+    Assert.IsNotNull( LWithListObj );
+    Assert.IsNotNull( LWithListObj.ListOfObjectStatus );
+    Assert.AreEqual( 3, LWithListObj.ListOfObjectStatus.Count );
+    Assert.AreEqual( osCreated, LWithListObj.ListOfObjectStatus[0] );
+    Assert.AreEqual( osUnload, LWithListObj.ListOfObjectStatus[1] );
+    Assert.AreEqual( osLoaded, LWithListObj.ListOfObjectStatus[2] );
+  finally
+    LWithListObj.Free();
+  end;
+end;
+
+procedure TClassSerializationTest.SerializeObjectEnumWithTList();
 var
   LWithListObj: TObjWithTList;
 begin
@@ -223,9 +240,7 @@ procedure TClassSerializationTest.SerializeWithEmptyAsEmptyTest();
 var
   LWithStrObj: TWithStrObj;
 begin
-  TJson2
-    .Instance
-    .Configure( [ SerializeField ] );
+  TJson2.ConfigureGlobal( [ SerializeField ] );
 
   LWithStrObj := TWithStrObj.Create();
   try
@@ -239,9 +254,7 @@ procedure TClassSerializationTest.SerializeWithEmptyAsNullTest();
 var
   LWithStrObj: TWithStrObj;
 begin
-  TJson2
-    .Instance
-    .Configure( [ SerializeField, SerializeEmptyAsNull ] );
+  TJson2.ConfigureGlobal( [ SerializeField, SerializeEmptyAsNull ] );
 
   LWithStrObj := TWithStrObj.Create();
   try
@@ -296,9 +309,7 @@ procedure TClassSerializationTest.DeserializeEnumWithStringContractTest();
 var
   LObjWithEnum: TEnumRepresentation;
 begin
-  TJson2
-    .Instance
-    .Configure( [ SerializeField, SerializeEnumAsInteger ] );
+  TJson2.ConfigureGlobal( [ SerializeField, SerializeEnumAsInteger ] );
 
   LObjWithEnum :=
     TJson2.JsonTextToObject<TEnumRepresentation>('{"StatusObj":"CREATED"}');
@@ -321,9 +332,7 @@ procedure TClassSerializationTest.DeserializeEnumWithoutIntegerContractTest();
 var
   LObjWithoutContract: TEnumNoContractRepresentation;
 begin
-  TJson2
-    .Instance
-    .Configure( [ SerializeField, SerializeEnumAsInteger ] );
+  TJson2.ConfigureGlobal( [ SerializeField, SerializeEnumAsInteger ] );
 
   LObjWithoutContract :=
     TJson2.JsonTextToObject<TEnumNoContractRepresentation>('{"StatusObj":0}');
@@ -346,9 +355,7 @@ procedure TClassSerializationTest.DeserializeEnumWithoutStringContractTest();
 var
   LObjWithoutContract: TEnumNoContractRepresentation;
 begin
-  TJson2
-    .Instance
-    .Configure( [ SerializeField, SerializeEnumAsString ] );
+  TJson2.ConfigureGlobal( [ SerializeField, SerializeEnumAsString ] );
 
   LObjWithoutContract :=
     TJson2.JsonTextToObject<TEnumNoContractRepresentation>('{"StatusObj":"osCreated"}');
@@ -371,9 +378,7 @@ procedure TClassSerializationTest.SerializeEnumWithoutIntegerContractTest();
 var
   LObjWithoutContract: TEnumNoContractRepresentation;
 begin
-  TJson2
-    .Instance
-    .Configure( [ SerializeField, SerializeEnumAsInteger ] );
+  TJson2.ConfigureGlobal( [ SerializeField, SerializeEnumAsInteger ] );
 
   LObjWithoutContract := TEnumNoContractRepresentation.Create();
   try
@@ -401,9 +406,7 @@ procedure TClassSerializationTest.SerializeEnumWithoutStringContractTest();
 var
   LObjWithoutContract: TEnumNoContractRepresentation;
 begin
-  TJson2
-    .Instance
-    .Configure( [ SerializeField, SerializeEnumAsString ] );
+  TJson2.ConfigureGlobal( [ SerializeField, SerializeEnumAsString ] );
 
   LObjWithoutContract := TEnumNoContractRepresentation.Create();
   try

@@ -11,7 +11,6 @@ uses
   System.Rtti,
   System.DateUtils,
   System.SyncObjs,
-  System.Variants,
   System.Generics.Collections;
 
 type
@@ -23,40 +22,37 @@ type
                           SerializeEnumAsInteger = 4,
                           SerializeEnumAsString  = 5 );
 
+{$Region 'Forward Declarations'}
+
+  TRttiBucket = class;
+
+  TRttiTypeHandler = class;
+
+  TEnumTypeContract = class;
+
+  TJsonMarhshaller = class;
+
+  TContractTypeMapper<T> = class;
+
+  TAbstractRttiBucket = class;
+  
+  TStringMapper = TContractTypeMapper<String>;
+
+  TIntegerMapper = TContractTypeMapper<Integer>;
+
   TMarshallOptionKindArray = TArray<TMarshallOptionKind>;
+  
+  TOwnedObjectDictionary<K; V> = class;
 
-  //
-  // Representa as configurações de TMarshallOptionKind no escopo
-  // de tipo e global.
-  //
-  TMarshallFlags = class( TBits )
-    private
-      procedure ToState(AKind: TMarshallOptionKind; AState: Boolean);
-    public
-      procedure CloneFrom(AOtherMarshallFlags: TMarshallFlags);
-      procedure Setup(AKinds: TMarshallOptionKindArray);
-      procedure Up(AKind: TMarshallOptionKind);
-      procedure Down(AKind: TMarshallOptionKind);
-      function HasKind(AKind: TMarshallOptionKind): Boolean;
-      procedure ResetAllBits();
-    public
-      constructor Create();
-    end;
+  TRttiBucketDictionary = TOwnedObjectDictionary<String, TArray<TAbstractRttiBucket>>;
 
-  //
-  // Cria objetos TMarshallFlags conforme o objeto RTTI. Atualmente só
-  // possui suporte para adquirir informações de atributos em TRttiType.
-  //
-  TMarshallFlagsFactory = class sealed
-    public
-      class function FromRttiObject(ARttiObject: TRttiObject): TMarshallFlags;
-    end;
+{$EndRegion 'Forward Declarations'}
 
   TOwnedObjectDictionary<K; V> = class( TObjectDictionary<K,V> )
     public
       constructor Create();
     end;
-
+    
   TTypeInfoIndexer<T: class> = class( TOwnedObjectDictionary<PTypeInfo, T> );
 
 {$Region 'Attributes'}
@@ -92,9 +88,6 @@ type
       property Value:        V         read FValue;
     end;
 
-  StringEnumRuleAttribute = class( TCustomEnumContractRuleAttribute<String> );
-  IntegerEnumRuleAttribute = class( TCustomEnumContractRuleAttribute<Integer> );
-
   MarshallOptionAttribute = class ( TCustomAttribute )
     strict private
       FKind: TMarshallOptionKind;
@@ -103,6 +96,10 @@ type
     public
       property Kind: TMarshallOptionKind read FKind;
     end;
+
+  StringEnumRuleAttribute = class( TCustomEnumContractRuleAttribute<String> );
+  
+  IntegerEnumRuleAttribute = class( TCustomEnumContractRuleAttribute<Integer> );
 
 {$EndRegion 'Attributes'}
 
@@ -149,76 +146,59 @@ type
 
 {$EndRegion 'Rtti Accessors'}
 
-  TRttiTypeHandler = class;
+{$Region 'Utilities'}
 
-  TRttiBucket = class
-    strict private
-      FInnerRttiType: TRttiType;
-      FOuterRttiType: TRttiType;
-      FIsArray: Boolean;
-      FIsEnum: Boolean;
-      FRttiAccessor: IRttiAccessor;
-    protected
-      FParent: TRttiTypeHandler;
+  TGuard = class sealed
+    public
+      class procedure State(ACondition: Boolean; AMessage: String; Args: Array Of Const);
+      class procedure Fail(AMessage: String; Args: Array Of Const);
+    end;
+
+  TInfoUtil = class sealed
+    public
+      class function IsClass(ATypeInfo: PTypeInfo; AName: String): Boolean;
+    end;
+
+{$EndRegion 'Utilities'}
+
+  //
+  // Representa as configurações de TMarshallOptionKind no escopo
+  // de tipo e global.
+  //
+  TMarshallFlags = class( TBits )
     private
-      property IsArray:       Boolean       read FIsArray;
-      property IsEnum:        Boolean       read FIsEnum;
-      property RttiAccessor:  IRttiAccessor read FRttiAccessor;
-      property InnerRttiType: TRttiType     read FInnerRttiType;
-      property OuterRttiType: TRttiType     read FOuterRttiType;
-    protected
-      constructor Create(AInnerRttiType: TRttiType;
-                         AOuterRttiType: TRttiType;
-                         ARttiAccessor: IRttiAccessor;
-                         AIsArray: Boolean; AIsEnum: Boolean);
+      procedure ToState(AKind: TMarshallOptionKind; AState: Boolean);
+    public
+      procedure CloneFrom(AOtherMarshallFlags: TMarshallFlags);
+      procedure Setup(AKinds: TMarshallOptionKindArray);
+      procedure Up(AKind: TMarshallOptionKind);
+      procedure Down(AKind: TMarshallOptionKind);
+      function HasKind(AKind: TMarshallOptionKind): Boolean;
+      procedure ResetAllBits();
+    public
+      constructor Create();
     end;
 
   //
-  // Representa um TRttiBucket que retém informação para serialização e
-  // deserialização do tipo : TList<T>.
+  // Cria objetos TMarshallFlags conforme o objeto RTTI. Atualmente só
+  // possui suporte para adquirir informações de atributos em TRttiType.
   //
-  TGenericListRttiBucket = class( TRttiBucket )
-    strict private
-      FCountRttiProperty: TRttiProperty;
-      FItemRttiProperty: TRttiIndexedProperty;
-    private
-      function GetItemCountOf(AInstance: Pointer): Integer;
-      function GetItemValueOf(AInstance: Pointer; AIndex: Integer): TValue;
-    protected
-      constructor Create(AInnerRttiType: TRttiType;
-                         AOuterRttiType: TRttiType;
-                         ARttiAccessor: IRttiAccessor);
-    end;
+  TMarshallFlagsFactory = class sealed
+    public
+      class function FromRttiObject(ARttiObject: TRttiObject): TMarshallFlags;
+    end;    
 
-  TRttiBucketDictionary = TOwnedObjectDictionary<String, TArray<TRttiBucket>>;
 
+  //
+  //
+  //
   IMarshallFlagsConfigurer = interface
     procedure Configure(AKinds: TMarshallOptionKindArray); overload;
   end;
 
-  TRttiTypeHandler = class sealed
-    strict private
-      FRttiType: TRttiType;
-      FBucketMap: TRttiBucketDictionary;
-      FConstructorMethod: TRttiMethod;
-      FMarshallFlags: TMarshallFlags;
-    protected
-      property MarshallFlags: TMarshallFlags read FMarshallFlags;
-    private
-      function ExtractConstructor(ARttiType: TRttiType): TRttiMethod;
-      function CreateNewObject(): TObject;
-    private
-      function ContainsBucket(ABucketName: String): Boolean;
-      procedure AddRttiBucket(ABucketName: String; ARttiBucket: TRttiBucket);
-    public
-      procedure Configure(AKinds: TMarshallOptionKind);
-    private
-      property RttiBuckets: TRttiBucketDictionary read FBucketMap;
-    public
-      constructor Create(ARttiType: TRttiType);
-      destructor Destroy(); override;
-    end;
-
+  //
+  //
+  //
   TContractTypeMapper<T> = class
     private
       FValueToOrdinalMap: TDictionary<T, Int64>;
@@ -231,9 +211,6 @@ type
       constructor Create();
       destructor Destroy(); override;
     end;
-
-  TStringMapper = TContractTypeMapper<String>;
-  TIntegerMapper = TContractTypeMapper<Integer>;
 
   TEnumTypeContract = class sealed
     strict private
@@ -249,8 +226,135 @@ type
       constructor Create();
       destructor Destroy(); override;
     end;
+    
+  //
+  //
+  //
+  //
+  TAbstractRttiBucket = class abstract( TInterfacedObject, IRttiAccessor )
+    private
+      FInnerRttiType: TRttiType;
+      FOuterRttiType: TRttiType;
+      FIsArray: Boolean;
+      FIsEnum: Boolean;
+      FRttiAccessor: IRttiAccessor;
+      FMarshallFlags: TMarshallFlags;
+    protected
+      FParent: TRttiTypeHandler;
+    protected { Rtti mapping }
+      function ToJSONValue(const [ref] AValue: TValue): TJSONValue; virtual; abstract;
+      function ToRTTIValue(AJSONValue: TJSONValue): TValue; virtual; abstract;
+    public { proxy para IRttiAccessor }
+      function Get(const [ref] AObj: TObject): TValue;  virtual; abstract;
+      procedure Fill(const [ref] AObj: TObject; AValue: TValue); virtual; abstract;
+    public { JSON adapters }
+      function GetAsJSONValue(const [ref] AObj: TObject): TJSONValue; virtual; abstract;
+      procedure FillWithJSONValue(const [ref] AObj: TObject; AJSONValue: TJSONValue); virtual; abstract;
+    private
+      property IsArray:       Boolean        read FIsArray;
+      property IsEnum:        Boolean        read FIsEnum;
+      property RttiAccessor:  IRttiAccessor  read FRttiAccessor;
+      property InnerRttiType: TRttiType      read FInnerRttiType;
+      property OuterRttiType: TRttiType      read FOuterRttiType;
+      property MarshallFlags: TMarshallFlags read FMarshallFlags;
+    public
+      constructor Create(AInnerRttiType: TRttiType;
+                         AOuterRttiType: TRttiType;
+                         ARttiAccessor: IRttiAccessor;
+                         AIsArray: Boolean; AIsEnum: Boolean;
+                         AMarshallFlags: TMarshallFlags);
+    end;
+    
+  //
+  //
+  //
+  //
+  TRttiBucket = class( TAbstractRttiBucket )
+    protected { Rtti mapping }
+      function ToJSONValue(const [ref] AValue: TValue): TJSONValue; override;
+      function ToRTTIValue(AJSONValue: TJSONValue): TValue; override;
+    public { proxy para IRttiAccessor }
+      function Get(const [ref] AObj: TObject): TValue; override;
+      procedure Fill(const [ref] AObj: TObject; AValue: TValue); override;
+    public { JSON adapters }
+      function GetAsJSONValue(const [ref] AObj: TObject): TJSONValue; override;
+      procedure FillWithJSONValue(const [ref] AObj: TObject; AJSONValue: TJSONValue); override;
+    private
+      function StringToDateTime(AText: String): TDateTime;
+      function DateTimeToString(ADateTime: TDateTime): String;
+      function NewJSONNull(): TJSONValue;
+    private
+      function ObjectToJSONValue(const [ref] AValue: TValue): TJSONValue;
+      function EnumToJSONValue(const [ref] AValue: TValue): TJSONValue;
+      function ArrayToJSONValue(const [ref] AValue: TValue): TJSONValue;
+    private
+      function ToEnumOrdValue(ATypeInfo: PTypeInfo;
+                              AJSONValue: TJSONValue): TValue;
+      function JSONStringToRTTIValue(AJSONString: TJSONString;
+                                     ATypeInfo: PTypeInfo): TValue;
+      function JSONNumberToRTTIValue(AJSONNumber: TJSONNumber;
+                                     ATypeInfo: PTypeInfo): TValue;
+      function JSONObjectToRTTIValue(AJSONObject: TJSONObject;
+                                     ATypeInfo: PTypeInfo): TValue;
+      function JSONArrayToRTTIValue(AJSONArray: TJSONArray): TValue;
+    private
+      function GetEnumTypeContract(ATypeInfo: PTypeInfo): TEnumTypeContract;
+    end;
 
-  TJson2 = class( TInterfacedObject, IMarshallFlagsConfigurer )
+  //
+  // Representa um TRttiBucket que retém informação para serialização e
+  // deserialização do tipo : TList<T>.
+  //
+  TGenericListRttiBucket = class( TRttiBucket )
+    strict private
+      FConstructorMethod: TRttiMethod;
+      FCountRttiProperty: TRttiProperty;
+      FItemRttiProperty: TRttiIndexedProperty;
+      FAddRttiMethod: TRttiMethod;
+    protected { Rtti mapping }
+      function ToJSONValue(const [ref] AValue: TValue): TJSONValue; override;
+      function ToRTTIValue(AJSONValue: TJSONValue): TValue; override;
+    private
+      function CreateNewList(): TObject;
+      procedure AddItemFor(const [ref] AObj: TObject; AValue: TValue);
+      function GetItemCountOf(AInstance: Pointer): Integer;
+      function GetItemValueOf(AInstance: Pointer; AIndex: Integer): TValue;
+      function ExtractConstructor(): TRttiMethod;
+      function ExtractInnerType(): TRttiType;
+    protected
+      constructor Create(AOuterRttiType: TRttiType;
+                         ARttiAccessor: IRttiAccessor;
+                         AMarshallFlags: TMarshallFlags);
+    end;
+  
+  //
+  //
+  //
+  TRttiTypeHandler = class sealed
+    strict private
+      FRttiType: TRttiType;
+      FBucketMap: TRttiBucketDictionary;
+      FConstructorMethod: TRttiMethod;
+      FMarshallFlags: TMarshallFlags;
+    protected
+      property MarshallFlags: TMarshallFlags read FMarshallFlags;
+    private
+      function ExtractConstructor(ARttiType: TRttiType): TRttiMethod;
+      function CreateNewObject(): TObject;
+    private
+      function ContainsBucket(ABucketName: String): Boolean;
+      procedure AddRttiBucket(ABucketName: String; ARttiBucket: TAbstractRttiBucket);
+    private
+      property RttiBuckets: TRttiBucketDictionary read FBucketMap;
+    public
+      constructor Create(ARttiType: TRttiType);
+      destructor Destroy(); override;
+    end;
+
+  //
+  //
+  //
+  TJsonMarhshaller = class sealed
     strict private
       FRWSync: IReadWriteSync;
       FRttiContext: TRttiContext;
@@ -260,52 +364,14 @@ type
     protected
       property GlobalMarhsallFlags: TMarshallFlags read FGlobalMarhsallFlags;
     private
-      class var FSingleton: TJson2;
+      class var FMarshaller: TJsonMarhshaller;
+      class property Marshaller: TJsonMarhshaller read FMarshaller;
     private
       class procedure FreeAssigned(const [ref] AObj: TObject);
       class procedure FreeArray<T: class>(var Arr: TArray<T>);
     public
       class constructor Create();
       class destructor Destroy();
-    public
-      class procedure Invalidate();
-      class function JsonArrayToList<T: class>(AJSONArray: TJSONArray): TList<T>;
-      class function JsonTextToObject<T: class>(AJSONText: String): T;
-      class function ObjectToJsonText<T: class>(AObj: T): String; overload;
-      class function ObjectToJsonText(AObj: TObject): String; overload;
-      class function JsonToObject<T: class>(AJSONObject: TJSONObject): T;
-      class function ObjectToJson<T: class>(AObj: T): TJSONObject;
-    private
-      function IsClass(ATypeInfo: PTypeInfo; AName: String): Boolean;
-      function StringToDateTime(AText: String): TDateTime;
-      function DateTimeToString(ADateTime: TDateTime): String;
-      function NewJSONNull(): TJSONValue;
-    private { special types utilities}
-      function ExtractInnerTypeOfTList(ARttiType: TRttiType): TRttiType;
-    private { special types serialization }
-      function GenericListToJSONValue(const [ref] AValue: TValue;
-                                      AGenericListRttiBucket: TGenericListRttiBucket;
-                                      ARttiTypeHandler: TRttiTypeHandler): TJSONValue;
-    private { common types serialization }
-      function EnumToJSONValue(const [ref] AValue: TValue;
-                               AMarshallFlags: TMarshallFlags): TJSONValue;
-      function ArrayToJSONValue(const [ref] AValue: TValue;
-                                ARttiTypeHandler: TRttiTypeHandler): TJSONValue;
-      function ToJSONValue(const [ref] AValue: TValue;
-                           ARttiTypeHandler: TRttiTypeHandler): TJSONValue;
-    private
-      function ToEnumOrdValue(ATypeInfo: PTypeInfo;
-                              AJSONValue: TJSONValue): TValue;
-      function ToRTTIValue(ARttiBucket: TRttiBucket;
-                           AJSONValue: TJSONValue): TValue;
-      function JSONStringToRTTIValue(AJSONString: TJSONString;
-                                     ATypeInfo: PTypeInfo): TValue;
-      function JSONNumberToRTTIValue(AJSONNumber: TJSONNumber;
-                                     ATypeInfo: PTypeInfo): TValue;
-      function JSONObjectToRTTIValue(AJSONObject: TJSONObject;
-                                     ATypeInfo: PTypeInfo): TValue;
-      function JSONArrayToRTTIValue(AJSONArray: TJSONArray;
-                                    ARttiBucket: TRttiBucket): TValue;
     private
       function GetRttiTypeOfMember(ARttiMember: TRttiMember): TRttiType;
       procedure RegisterEnumTypeContract(ARttiType: TRttiType);
@@ -321,7 +387,7 @@ type
       procedure ExtractRttiFields(ARttiType: TRttiType;
                                   ARttiTypeHandler: TRttiTypeHandler);
     public
-      procedure Configure(AKinds: TMarshallOptionKindArray); overload;
+      procedure Configure(AKinds: TMarshallOptionKindArray);
     public
       procedure InvalidateCache();
       function SerializeObject(AObject: TObject): TJSONValue;
@@ -330,11 +396,31 @@ type
                                  ATypeInfo: PTypeInfo): TObject;
       function Deserialize<T: class>(AJSONObject: TJSONObject): T;
     public
-      class property Instance: TJson2 read FSingleton;
-    public
       constructor Create();
       destructor Destroy(); override;
     end;
+    
+  //
+  //
+  //
+  TJson2 = class sealed( TInterfacedObject )
+    public
+      class procedure Invalidate();
+    public
+      class procedure ConfigureGlobal(AKinds: TMarshallOptionKindArray);
+      class procedure ConfigureType(AKinds: TMarshallOptionKindArray);
+      class procedure ConfigureBucket(AKinds: TMarshallOptionKindArray);    
+    public
+      class function JsonArrayToList<T: class>(AJSONArray: TJSONArray): TList<T>;
+      class function JsonTextToObject<T: class>(AJSONText: String): T;
+      class function ObjectToJsonText<T: class>(AObj: T): String; overload;
+      class function ObjectToJsonText(AObj: TObject): String; overload;
+      class function JsonToObject<T: class>(AJSONObject: TJSONObject): T;
+      class function ObjectToJson<T: class>(AObj: T): TJSONObject;
+    end;
+
+const
+  JSON2OBJ_VERSION = '1.0.1';
 
 implementation
 
@@ -373,9 +459,9 @@ end;
 
 {$EndRegion 'Attributes'}
 
-{$Region 'TJson2'}
+{$Region 'TJsonMarhshaller'}
 
-constructor TJson2.Create();
+constructor TJsonMarhshaller.Create();
 begin
   TRttiContext.KeepContext();
   FRttiContext := TRttiContext.Create();
@@ -388,14 +474,14 @@ begin
   FGlobalMarhsallFlags.Up( SerializeEnumAsString );
 end;
 
-function TJson2.DeserializeObject(AJSONObject: TJSONObject;
-                                  ATypeInfo: PTypeInfo): TObject;
-var
+function TJsonMarhshaller.DeserializeObject(AJSONObject: TJSONObject;
+                                            ATypeInfo: PTypeInfo): TObject;
+var          
   LInstance: TObject;
   LRttiTypeHandler: TRttiTypeHandler;
 var
   LJSONValue: TJSONValue;
-  LRttiBuckets: TArray<TRttiBucket>;
+  LRttiBuckets: TArray<TAbstractRttiBucket>;
   LBucketName: String;
 begin
   LInstance := nil;
@@ -416,8 +502,7 @@ begin
     for var LRttiBucket in LRttiBuckets do
     begin
       try
-        LRttiBucket.RttiAccessor.Fill( LInstance, ToRTTIValue( LRttiBucket,
-                                                               LJSONValue ) );
+        LRttiBucket.FillWithJSONValue( LInstance, LJSONValue );
       except
         on Ex: EInvalidCast do
           raise Exception.CreateFmt('Bucket "%s" expected type "%s" but found "%s". ',
@@ -431,17 +516,17 @@ begin
   Result := LInstance;
 end;
 
-function TJson2.Deserialize<T>(AJSONObject: TJSONObject): T;
+function TJsonMarhshaller.Deserialize<T>(AJSONObject: TJSONObject): T;
 begin
   Result := ( DeserializeObject( AJSONObject, TypeInfo( T ) ) as T );
 end;
 
-function TJson2.SerializeObject(AObject: TObject): TJSONValue;
+function TJsonMarhshaller.SerializeObject(AObject: TObject): TJSONValue;
 var
   LRttiTypeHandler: TRttiTypeHandler;
   LJSONObject: TJSONObject;
 var
-  LRttiBuckets: TArray<TRttiBucket>;
+  LRttiBuckets: TArray<TAbstractRttiBucket>;
   LBucketName: String;
   LValue: TValue;
 begin
@@ -457,35 +542,19 @@ begin
     LRttiBuckets := LRttiBucketEntry.Value;
 
     for var LRttiBucket in LRttiBuckets do
-    begin
-      if LRttiBucket is TGenericListRttiBucket then
-      begin
-        LValue := LRttiBucket.RttiAccessor.Get( AObject );
-        LJSONObject.AddPair(
-          LBucketName,
-          GenericListToJSONValue( LValue,
-                                  TGenericListRttiBucket(LRttiBucket),
-                                  LRttiTypeHandler ) );
-
-      end
-      else
-      begin
-        LValue := LRttiBucket.RttiAccessor.Get( AObject );
-        LJSONObject.AddPair( LBucketName, ToJSONValue( LValue,
-                                                       LRttiTypeHandler ) );
-      end;
-    end;
+      LJSONObject.AddPair( LBucketName, 
+                           LRttiBucket.GetAsJSONValue( AObject ) );
   end;
 
   Result := LJSONObject;
 end;
 
-function TJson2.Serialize<T>(AObject: T): TJSONObject;
+function TJsonMarhshaller.Serialize<T>(AObject: T): TJSONObject;
 begin
   Result := ( SerializeObject( AObject ) as TJSONObject );
 end;
 
-procedure TJson2.RegisterEnumTypeContract(ARttiType: TRttiType);
+procedure TJsonMarhshaller.RegisterEnumTypeContract(ARttiType: TRttiType);
 var
   LEnumTypeInfo: PTypeInfo;
   LContract: TEnumTypeContract;
@@ -523,295 +592,8 @@ begin
   end;
 end;
 
-function TJson2.ToRTTIValue(ARttiBucket: TRttiBucket;
-                            AJSONValue: TJSONValue): TValue;
-var
-  AInnerTypeInfo: PTypeInfo;
-begin
-  if AJSONValue is TJSONNull then
-    Exit( TValue.Empty );
 
-  AInnerTypeInfo := ARttiBucket.InnerRttiType.Handle;
-
-  if ( ARttiBucket.IsEnum ) and
-     ( not ARttiBucket.InnerRttiType.HasName('Boolean') ) then
-  begin
-    Exit( ToEnumOrdValue( AInnerTypeInfo, AJSONValue  ) );
-  end;
-
-  if AJSONValue is TJSONNumber then
-    Exit( JSONNumberToRTTIValue( ( AJSONValue as TJSONNumber ),
-                                 AInnerTypeInfo ) );
-
-  if AJSONValue is TJSONBool then
-    Exit( TValue.From<Boolean>( (AJSONValue as TJSONBool).AsBoolean ) );
-
-  if AJSONValue is TJSONString then
-    Exit( JSONStringToRTTIValue( ( AJSONValue as TJSONString ),
-                                 AInnerTypeInfo ) );
-
-  if AJSONValue is TJSONObject then
-    Exit( JSONObjectToRTTIValue( ( AJSONValue as TJSONObject ),
-                                 AInnerTypeInfo ) );
-
-  if AJSONValue is TJSONArray then
-    Exit( JSONArrayToRTTIValue( ( AJSONValue as TJSONArray ),
-                                ARttiBucket ) );
-
-  raise Exception.CreateFmt( 'Could found a type for value "%s".',
-                             [AJSONValue.Value] );
-end;
-
-function TJson2.JSONStringToRTTIValue(AJSONString: TJSONString;
-                                      ATypeInfo: PTypeInfo): TValue;
-begin
-  if ATypeInfo.Name = 'TDateTime' then
-    Exit( TValue.From<TDateTime>( StringToDateTime( AJSONString.Value ) ) )
-
-  else if ATypeInfo.Name = 'TDate' then
-    Exit( TValue.From<TDate>( Trunc( StringToDateTime( AJSONString.Value ) ) ) );
-
-  Result := TValue.From<String>( AJSONString.Value );
-end;
-
-function TJson2.JSONArrayToRTTIValue(AJSONArray: TJSONArray;
-                                     ARttiBucket: TRttiBucket): TValue;
-var
-  LArray: Array Of TValue;
-  LCount: Integer;
-begin
-  LCount := AJSONArray.Count;
-
-  SetLength( LArray, LCount );
-  Dec( LCount, 1 );
-
-  for var I := 0 to LCount do
-    LArray[I] := ToRTTIValue( ARttiBucket, AJSONArray.Items[I] );
-
-  Result := TValue.FromArray( ARttiBucket.OuterRttiType.Handle,
-                              LArray );
-end;
-
-function TJson2.JSONObjectToRTTIValue(AJSONObject: TJSONObject;
-                                      ATypeInfo: PTypeInfo): TValue;
-begin
-  Result := TValue.From<TObject>( DeserializeObject( AJSONObject, ATypeInfo ) );
-end;
-
-function TJson2.JSONNumberToRTTIValue(AJSONNumber: TJSONNumber;
-                                      ATypeInfo: PTypeInfo): TValue;
-begin
-  Result := TValue.Empty;
-
-  case ATypeInfo.Kind of
-    tkInteger, tkInt64:
-      Exit( AJSONNumber.AsInt64 );
-
-    tkFloat:
-      Exit(  AJSONNumber.AsDouble );
-  end;
-end;
-
-function TJson2.ToEnumOrdValue(ATypeInfo: PTypeInfo;
-                               AJSONValue: TJSONValue): TValue;
-var
-  LOrdinal: Int64;
-var
-  LJSONString: TJSONString;
-  LJSONNumber: TJSONNumber;
-begin
-  with GetEnumTypeContract( ATypeInfo ) do
-  begin
-    if AJSONValue is TJSONNumber then
-    begin
-      LJSONNumber := TJSONNumber( AJSONValue );
-
-      if IntegerMapper.TryResolveOrdinal( LJSONNumber.AsInt, LOrdinal ) then
-        Exit ( TValue.FromOrdinal( ATypeInfo, LOrdinal ) );
-    end
-
-    else if AJSONValue is TJSONString then
-    begin
-      LJSONString := TJSONString( AJSONValue );
-
-      if StringMapper.TryResolveOrdinal( LJSONString.Value, LOrdinal ) then
-        Exit ( TValue.FromOrdinal( ATypeInfo, LOrdinal ) )
-    end
-  end;
-
-  raise Exception.CreateFmt('"%s" is not a valid value for "%s".',
-                            [ AJSONValue.Value, ATypeInfo^.Name ]);
-end;
-
-function TJson2.ToJSONValue(const [ref] AValue: TValue;
-                            ARttiTypeHandler: TRttiTypeHandler): TJSONValue;
-var
-  LMarshallFlags: TMarshallFlags;
-begin
-  if AValue.IsEmpty then
-    Exit( NewJSONNull() );
-
-  LMarshallFlags := ARttiTypeHandler.MarshallFlags;
-
-  case AValue.Kind of
-    tkInteger, tkInt64:
-      Exit( TJSONNumber.Create( AValue.AsInt64() ) );
-
-    tkFloat:
-      if AValue.TypeInfo = TypeInfo( TDateTime ) then
-      begin
-        var LContentDateTime := TDateTime( AValue.AsExtended() );
-
-        if ( LContentDateTime <= 0 ) then
-          Exit( TJSONNull.Create() );
-
-        Exit( TJSONString.Create( DateTimeToString( LContentDateTime ) ) )
-      end
-      else if AValue.TypeInfo = TypeInfo( TDate ) then
-      begin
-        var LContentDate := TDate( Trunc( AValue.AsExtended() ) );
-
-        if ( LContentDate <= 0 ) then
-          Exit( TJSONNull.Create() );
-
-        Exit( TJSONString.Create( DateTimeToString( LContentDate ) ) )
-      end
-      else
-        Exit( TJSONNumber.Create( AValue.AsExtended() ) );
-
-    tkChar, tkString, tkUString, tkWChar, tkLString, tkWString:
-    begin
-      var LContentStr := AValue.AsString();
-
-      if ( Trim(LContentStr) = EmptyStr ) and
-         ( LMarshallFlags.HasKind( SerializeEmptyAsNull ) ) then
-      begin
-        Exit( TJSONNull.Create() );
-      end;
-
-      Exit( TJSONString.Create( AValue.AsString() ) );
-    end;
-
-    tkEnumeration:
-      Exit( EnumToJSONValue( AValue, LMarshallFlags ) );
-
-    tkDynArray:
-      Exit( ArrayToJSONValue( AValue, ARttiTypeHandler ) );
-
-    tkClass:
-      Exit( SerializeObject( AValue.AsObject() ) );
-
-    else
-      Result := TJSONString.Create( AValue.ToString() );
-  end;
-end;
-
-function TJson2.ArrayToJSONValue(const [ref] AValue: TValue;
-                                 ARttiTypeHandler: TRttiTypeHandler): TJSONValue;
-var
-  LCount: Integer;
-  LElement: TValue;
-  LJSONArray: TJSONArray;
-begin
-  LJSONArray := TJSONArray.Create();
-  try
-    LCount := AValue.GetArrayLength - 1;
-    for var I := 0 to LCount do
-    begin
-      LElement := AValue.GetArrayElement( I );
-      LJSONArray.AddElement( ToJSONValue( LElement, ARttiTypeHandler ) );
-    end;
-    Result := LJSONArray;
-  except
-    LJSONArray.Free();
-    raise;
-  end;
-end;
-
-function TJson2.GenericListToJSONValue(const [ref] AValue: TValue;
-                                       AGenericListRttiBucket: TGenericListRttiBucket;
-                                       ARttiTypeHandler: TRttiTypeHandler): TJSONValue;
-var
-  LJSONArray: TJSONArray;
-var
-  LGenListInstance: TObject;
-  LItemCount: Integer;
-  LItemValue: TValue;
-  LJSONValue: TJSONValue;
-begin
-  LGenListInstance := AValue.AsObject();
-
-  if not Assigned( LGenListInstance ) then
-  begin
-    if ARttiTypeHandler.MarshallFlags.HasKind( SerializeEmptyAsNull ) then
-      Exit( NewJSONNull() )
-    else
-      Exit( TJSONArray.Create() );
-  end;
-
-  LJSONArray := TJSONArray.Create();
-  try
-    LItemCount := AGenericListRttiBucket
-                      .GetItemCountOf( PByte( LGenListInstance ) );
-
-    for var I := 0 to LItemCount - 1 do
-    begin
-      LItemValue := AGenericListRttiBucket
-                        .GetItemValueOf( PByte( LGenListInstance ), I );
-
-      if LItemValue.IsEmpty then
-        Continue;
-
-      LJSONValue := ToJSONValue( LItemValue, ARttiTypeHandler );
-      LJSONArray.AddElement( LJSONValue );
-    end;
-
-    Result := LJSONArray;
-  except
-    FreeAssigned( LJSONValue );
-    LJSONArray.Free();
-    raise;
-  end;
-end;
-
-function TJson2.EnumToJSONValue(const [ref] AValue: TValue;
-                                AMarshallFlags: TMarshallFlags): TJSONValue;
-var
-  LOrdinal: Int64;
-var
-  LEnumString: String;
-  LEnumInteger: Integer;
-begin
-  if AValue.TypeInfo = TypeInfo( Boolean ) then
-    Exit( TJSONBool.Create( AValue.AsBoolean() ) );
-
-  if not AValue.IsOrdinal then
-    Exit( TJSONString.Create( AValue.ToString() ) );
-
-  LOrdinal := AValue.AsOrdinal();
-
-  with GetEnumTypeContract( AValue.TypeInfo ) do
-  begin
-    if AMarshallFlags.HasKind( SerializeEnumAsString ) then
-    begin
-      if StringMapper.TryResolveValue( LOrdinal, LEnumString ) then
-        Exit( TJSONString.Create( LEnumString ) )
-      else
-        Exit( TJSONString.Create( AValue.ToString() ) );
-    end
-    else if AMarshallFlags.HasKind( SerializeEnumAsInteger ) then
-    begin
-      if IntegerMapper.TryResolveValue( LOrdinal, LEnumInteger ) then
-        Exit( TJSONNumber.Create( LEnumInteger ) )
-      else
-        Exit( TJSONNumber.Create( LOrdinal ) );
-    end;
-  end;
-
-  Result := NewJSONNull();
-end;
-
-function TJson2.GetRttiTypeHandler(ATypInfo: PTypeInfo): TRttiTypeHandler;
+function TJsonMarhshaller.GetRttiTypeHandler(ATypInfo: PTypeInfo): TRttiTypeHandler;
 var
   LTypeRttiHandler: TRttiTypeHandler;
   LRttiType: TRttiType;
@@ -855,7 +637,7 @@ begin
   Result := LTypeRttiHandler;
 end;
 
-function TJson2.GetEnumTypeContract(ATypeInfo: PTypeInfo): TEnumTypeContract;
+function TJsonMarhshaller.GetEnumTypeContract(ATypeInfo: PTypeInfo): TEnumTypeContract;
 var
   LEnumTypeContract: TEnumTypeContract;
   LOrdinal: Int64;
@@ -881,22 +663,22 @@ begin
   Result := LEnumTypeContract;
 end;
 
-procedure TJson2.ExtractRttiProperties(ARttiType: TRttiType;
-                                       ARttiTypeHandler: TRttiTypeHandler);
+procedure TJsonMarhshaller.ExtractRttiProperties(ARttiType: TRttiType;
+                                                 ARttiTypeHandler: TRttiTypeHandler);
 begin
   for var LRttiProperty in ARttiType.GetProperties() do
     RegisterRttiBucket( ARttiTypeHandler, LRttiProperty );
 end;
 
-procedure TJson2.ExtractRttiFields(ARttiType: TRttiType;
-                                   ARttiTypeHandler: TRttiTypeHandler);
+procedure TJsonMarhshaller.ExtractRttiFields(ARttiType: TRttiType;
+                                             ARttiTypeHandler: TRttiTypeHandler);
 begin
   for var LRttiProperty in ARttiType.GetFields() do
     RegisterRttiBucket( ARttiTypeHandler, LRttiProperty );
 end;
 
-procedure TJson2.RegisterRttiBucket(ARttiTypeHandler: TRttiTypeHandler;
-                                    ARttiDataMember: TRttiMember);
+procedure TJsonMarhshaller.RegisterRttiBucket(ARttiTypeHandler: TRttiTypeHandler;
+                                              ARttiDataMember: TRttiMember);
 var
   LDataType: TRttiType;
   LIsArray, LIsEnum: Boolean;
@@ -904,6 +686,7 @@ var
   LRttiBucket: TRttiBucket;
   LBucketName: String;
   LRttiAccessor: IRttiAccessor;
+  LMarshallFlags: TMarshallFlags;
 begin
   // LDataType == OuterRttiType
   LDataType := GetRttiTypeOfMember( ARttiDataMember );
@@ -921,6 +704,9 @@ begin
   if ARttiDataMember.HasAttribute<TransientAttribute> then
     Exit;
 
+  // Atualmente as MarshallFlags de Buckets herdam de TRttiTypeHandler.
+  LMarshallFlags := ARttiTypeHandler.MarshallFlags;
+    
   LIsArray := False;
   LIsArray := LIsArray or ( LDataType.TypeKind = tkArray );
   LIsArray := LIsArray or ( LDataType.TypeKind = tkDynArray );
@@ -949,13 +735,15 @@ begin
   // Special types handling //
   else if LDataType.TypeKind = tkClass then
   begin
-    if IsClass( LDataType.Handle, 'TList' ) then
+
+    if TInfoUtil.IsClass( LDataType.Handle, 'TList' ) or
+       TInfoUtil.IsClass( LDataType.Handle, 'TObjectList' ) then
     begin
-      LInnerRttiType := ExtractInnerTypeOfTList( LDataType );
-      LRttiBucket := TGenericListRttiBucket.Create( LInnerRttiType,
-                                                    LDataType,
-                                                    LRttiAccessor );
-    end
+      LRttiBucket := TGenericListRttiBucket.Create( LDataType,
+                                                    LRttiAccessor,
+                                                    LMarshallFlags );
+    end;
+
   end;
 
   // Fallback //
@@ -968,13 +756,14 @@ begin
                                        LDataType,
                                        LRttiAccessor,
                                        LIsArray,
-                                       LIsEnum );
+                                       LIsEnum,
+                                       LMarshallFlags );
   end;
 
   ARttiTypeHandler.AddRttiBucket( LBucketName, LRttiBucket );
 end;
 
-function TJson2.GetRttiTypeOfMember(ARttiMember: TRttiMember): TRttiType;
+function TJsonMarhshaller.GetRttiTypeOfMember(ARttiMember: TRttiMember): TRttiType;
 begin
   if not Assigned( ARttiMember )  then
     Exit( nil );
@@ -989,7 +778,7 @@ begin
                             [ ARttiMember.Name ]);
 end;
 
-function TJson2.StringToDateTime(AText: String): TDateTime;
+function TRttiBucket.StringToDateTime(AText: String): TDateTime;
 var
   LFormatSettings: TFormatSettings;
 begin
@@ -1002,27 +791,27 @@ begin
                            LFormatSettings );
 end;
 
-function TJson2.DateTimeToString(ADateTime: TDateTime): String;
+function TRttiBucket.DateTimeToString(ADateTime: TDateTime): String;
 begin
   Result := FormatDateTime( 'yyyy"-"mm"-"dd"T"hh":"nn":"ss', ADateTime );
 end;
 
-function TJson2.CanHandleBucket(ABucketName: String): Boolean;
+function TJsonMarhshaller.CanHandleBucket(ABucketName: String): Boolean;
 begin
   Result := ( ABucketName <> 'RefCount' );
 end;
 
-procedure TJson2.Configure(AKinds: TMarshallOptionKindArray);
+procedure TJsonMarhshaller.Configure(AKinds: TMarshallOptionKindArray);
 begin
   try
     if Assigned( FGlobalMarhsallFlags ) then
       FGlobalMarhsallFlags.Setup( AKinds );
   finally
-    Invalidate();
+    TJsonMarhshaller.Marshaller.InvalidateCache();
   end;
 end;
 
-function TJson2.ExtractJSOName(ARttiDataMember: TRttiMember): String;
+function TJsonMarhshaller.ExtractJSOName(ARttiDataMember: TRttiMember): String;
 var
   LJSONMemberName: String;
   LKeyAttribute: KeyAttribute;
@@ -1050,39 +839,12 @@ begin
   Result := LJSONMemberName;
 end;
 
-function TJson2.ExtractInnerTypeOfTList(ARttiType: TRttiType): TRttiType;
-var
-  LRttiMethodOfAdd: TRttiMethod;
-begin
-  LRttiMethodOfAdd := ARttiType.GetMethod( 'Add' );
-
-  if not Assigned( LRttiMethodOfAdd ) then
-    raise Exception.CreateFmt( 'Failed to find Add(...) function for "%s".',
-                               [ ARttiType.Name ] );
-
-  Result := LRttiMethodOfAdd.GetParameters()[0].ParamType;
-  Assert( Result <> nil );
-end;
-
-function TJson2.IsClass(ATypeInfo: PTypeInfo; AName: String): Boolean;
-begin
-  if ATypeInfo = nil then
-    Exit( False );
-
-  Result := String( ATypeInfo.Name ).StartsWith( AName, True );
-end;
-
-function TJson2.AsRttiType(ATypeInfo: PTypeInfo): TRttiType;
+function TJsonMarhshaller.AsRttiType(ATypeInfo: PTypeInfo): TRttiType;
 begin
   Result := FRttiContext.GetType( ATypeInfo );
 end;
 
-function TJson2.NewJSONNull(): TJSONValue;
-begin
-  Result := TJSONNull.Create();
-end;
-
-procedure TJson2.InvalidateCache();
+procedure TJsonMarhshaller.InvalidateCache();
 begin
   FRWSync.BeginWrite();
   try
@@ -1093,7 +855,7 @@ begin
   end;
 end;
 
-destructor TJson2.Destroy();
+destructor TJsonMarhshaller.Destroy();
 begin
   FreeAssigned( FRttiTypeHandlerMap );
   FreeAssigned( FEnumTypeContractMap );
@@ -1103,7 +865,7 @@ begin
   inherited;
 end;
 
-class procedure TJson2.FreeAssigned(const [ref] AObj: TObject);
+class procedure TJsonMarhshaller.FreeAssigned(const [ref] AObj: TObject);
 var
   LTemp: TObject;
 begin
@@ -1115,7 +877,7 @@ begin
   end;
 end;
 
-class procedure TJson2.FreeArray<T>(var Arr: TArray<T>);
+class procedure TJsonMarhshaller.FreeArray<T>(var Arr: TArray<T>);
 begin
   if Assigned( Arr ) then
   begin
@@ -1125,7 +887,17 @@ begin
   end;
 end;
 
-{$EndRegion 'TJson2'}
+class constructor TJsonMarhshaller.Create();
+begin
+  FMarshaller := TJsonMarhshaller.Create();
+end;
+
+class destructor TJsonMarhshaller.Destroy();
+begin
+  FMarshaller.Free();
+end;
+
+{$EndRegion 'TJsonMarhshaller'}
 
 {$Region 'Rtti Accessors'}
 
@@ -1172,16 +944,16 @@ begin
 end;
 
 procedure TRttiTypeHandler.AddRttiBucket(ABucketName: String;
-                                         ARttiBucket: TRttiBucket);
+                                         ARttiBucket: TAbstractRttiBucket);
 var
   LOldSize: Integer;
-  LNewBucketArray, LBucketArray: TArray<TRttiBucket>;
+  LNewBucketArray, LBucketArray: TArray<TAbstractRttiBucket>;
 begin
   if FBucketMap.TryGetValue( ABucketName, LBucketArray ) then
   begin
     LOldSize := Length( LBucketArray );
     SetLength( LNewBucketArray, LOldSize + 1 );
-    TArray.Copy<TRttiBucket>( LBucketArray,  LNewBucketArray, LOldSize );
+    TArray.Copy<TAbstractRttiBucket>( LBucketArray,  LNewBucketArray, LOldSize );
     LNewBucketArray[ LOldSize ] := ARttiBucket;
     FBucketMap.AddOrSetValue( ABucketName, LNewBucketArray );
     Exit;
@@ -1190,11 +962,6 @@ begin
   LNewBucketArray[0] := ARttiBucket;
   LNewBucketArray[0].FParent := Self;
   FBucketMap.Add( ABucketName, LNewBucketArray );
-end;
-
-procedure TRttiTypeHandler.Configure(AKinds: TMarshallOptionKind);
-begin
-  FMarshallFlags.ResetAllBits();
 end;
 
 function TRttiTypeHandler.ContainsBucket(ABucketName: String): Boolean;
@@ -1241,15 +1008,14 @@ begin
   Result := LConstructorMethod;
 end;
 
-
 destructor TRttiTypeHandler.Destroy();
 var
-  LRttiBucketArray: TArray<TRttiBucket>;
+  LRttiBucketArray: TArray<TAbstractRttiBucket>;
 begin
   for var LRttiBucket in FBucketMap do
   begin
     LRttiBucketArray := LRttiBucket.Value;
-    TJson2.FreeArray<TRttiBucket>( LRttiBucketArray );
+    TJsonMarhshaller.FreeArray<TAbstractRttiBucket>( LRttiBucketArray );
     FBucketMap.AddOrSetValue( LRttiBucket.Key, [] );
   end;
   FBucketMap.Free();
@@ -1301,8 +1067,8 @@ end;
 
 destructor TEnumTypeContract.Destroy();
 begin
-  TJson2.FreeAssigned( FStringMapper );
-  TJson2.FreeAssigned( FIntegerMapper );
+  TJsonMarhshaller.FreeAssigned( FStringMapper );
+  TJsonMarhshaller.FreeAssigned( FIntegerMapper );
   inherited;
 end;
 
@@ -1328,19 +1094,518 @@ end;
 
 {$Region 'TRttiBucket'}
 
-constructor TRttiBucket.Create(AInnerRttiType: TRttiType;
-                               AOuterRttiType: TRttiType;
-                               ARttiAccessor: IRttiAccessor;
-                               AIsArray: Boolean; AIsEnum: Boolean);
+constructor TAbstractRttiBucket.Create(AInnerRttiType: TRttiType;
+                                       AOuterRttiType: TRttiType;
+                                       ARttiAccessor: IRttiAccessor;
+                                       AIsArray: Boolean; AIsEnum: Boolean;
+                                       AMarshallFlags: TMarshallFlags);
 begin
   FInnerRttiType := AInnerRttiType;
   FOuterRttiType := AOuterRttiType;
   FRttiAccessor  := ARttiAccessor;
   FIsArray       := AIsArray;
   FIsEnum        := AIsEnum;
+  FMarshallFlags := AMarshallFlags;
 end;
 
+procedure TRttiBucket.Fill(const [ref] AObj: TObject; AValue: TValue);
+begin
+  RttiAccessor.Fill( AObj, AValue );
+end;
+
+procedure TRttiBucket.FillWithJSONValue(const [ref] AObj: TObject; AJSONValue: TJSONValue);
+begin
+  Fill( AObj, ToRTTIValue( AJSONValue ) );
+end;
+
+function TRttiBucket.Get(const [ref] AObj: TObject): TValue;
+begin
+  Result := RttiAccessor.Get( AObj );
+end;
+
+function TRttiBucket.GetAsJSONValue(const [ref] AObj: TObject): TJSONValue;
+begin
+  Result := ToJSONValue( Get( AObj ) );
+end;
+
+function TRttiBucket.GetEnumTypeContract(ATypeInfo: PTypeInfo): TEnumTypeContract;
+begin
+  Result := ( TJsonMarhshaller.Marshaller.GetEnumTypeContract( ATypeInfo ) );
+end;
+
+function TRttiBucket.ToRTTIValue(AJSONValue: TJSONValue): TValue;
+var
+  LInnerTypeInfo: PTypeInfo;
+begin
+  if AJSONValue is TJSONNull then
+    Exit( TValue.Empty );
+
+  LInnerTypeInfo := InnerRttiType.Handle;
+
+  if ( IsEnum ) and 
+     ( not TInfoUtil.IsClass( LInnerTypeInfo, 'Boolean' ) ) then
+  begin
+    Exit( ToEnumOrdValue( LInnerTypeInfo, AJSONValue  ) );
+  end;
+
+  if AJSONValue is TJSONNumber then
+    Exit( JSONNumberToRTTIValue( ( AJSONValue as TJSONNumber ),
+                                 LInnerTypeInfo ) );
+
+  if AJSONValue is TJSONBool then
+    Exit( TValue.From<Boolean>( (AJSONValue as TJSONBool).AsBoolean ) );
+
+  if AJSONValue is TJSONString then
+    Exit( JSONStringToRTTIValue( ( AJSONValue as TJSONString ),
+                                 LInnerTypeInfo ) );
+
+  if AJSONValue is TJSONObject then
+    Exit( JSONObjectToRTTIValue( ( AJSONValue as TJSONObject ),
+                                 LInnerTypeInfo ) );
+
+  if AJSONValue is TJSONArray then
+    Exit( JSONArrayToRTTIValue( ( AJSONValue as TJSONArray ) ) );
+
+  raise Exception.CreateFmt( 'Could found a type for value "%s".',
+                             [AJSONValue.Value] );
+end;
+
+function TRttiBucket.JSONStringToRTTIValue(AJSONString: TJSONString;
+                                           ATypeInfo: PTypeInfo): TValue;
+var
+  LValue: String;
+  LOrdinal: Int64;
+begin
+  LValue := AJSONString.Value;
+
+  if TInfoUtil.IsClass( ATypeInfo, 'TDateTime' ) then
+    Exit( TValue.From<TDateTime>( StringToDateTime( LValue ) ) )
+
+  else if TInfoUtil.IsClass( ATypeInfo, 'TDate' ) then
+    Exit( TValue.From<TDate>( Trunc( StringToDateTime( LValue ) ) ) )
+
+  else if ATypeInfo.Kind = tkEnumeration then
+  begin
+    with GetEnumTypeContract( ATypeInfo ) do
+    begin
+      if StringMapper.TryResolveOrdinal( LValue, LOrdinal  ) then
+        Exit( TValue.FromOrdinal( ATypeInfo, LOrdinal ) );
+
+      TGuard.Fail( 'Failed to map string "%" to ordinal of "%s".',
+                   [ LValue, ATypeInfo^.Name ] );
+    end;
+  end;
+
+  Result := TValue.From<String>( AJSONString.Value );
+end;
+
+function TRttiBucket.JSONArrayToRTTIValue(AJSONArray: TJSONArray): TValue;
+var
+  LArray: Array Of TValue;
+  LCount: Integer;
+begin
+  LCount := AJSONArray.Count;
+
+  SetLength( LArray, LCount );
+  Dec( LCount, 1 );
+
+  for var I := 0 to LCount do
+    LArray[I] := ToRTTIValue( AJSONArray.Items[I] );
+
+  Result := TValue.FromArray( OuterRttiType.Handle, LArray );
+end;
+
+function TRttiBucket.JSONObjectToRTTIValue(AJSONObject: TJSONObject;
+                                           ATypeInfo: PTypeInfo): TValue;
+var
+  LObj: TObject;
+begin
+  LObj := TJsonMarhshaller.Marshaller.DeserializeObject( AJSONObject,
+                                                         ATypeInfo );
+  Result := TValue.From<TObject>( LObj );
+end;
+
+function TRttiBucket.JSONNumberToRTTIValue(AJSONNumber: TJSONNumber;
+                                           ATypeInfo: PTypeInfo): TValue;
+var
+  LOrdinal: Int64;
+  LValue: Integer;
+begin
+  Result := TValue.Empty;
+
+  if ATypeInfo.Kind = tkEnumeration then
+  begin
+    with GetEnumTypeContract( ATypeInfo ) do
+    begin
+      if IntegerMapper.TryResolveOrdinal( LValue, LOrdinal  ) then
+        Exit( TValue.FromOrdinal( ATypeInfo, LOrdinal ) );
+
+      TGuard.Fail( 'Failed to map integer "%" to ordinal of "%s".',
+                   [ LValue, ATypeInfo^.Name ] );
+    end;
+  end;
+
+  case ATypeInfo.Kind of
+    tkInteger, tkInt64:
+      Exit( AJSONNumber.AsInt64 );
+
+    tkFloat:
+      Exit(  AJSONNumber.AsDouble );
+  end;
+end;
+
+function TRttiBucket.ToEnumOrdValue(ATypeInfo: PTypeInfo;
+                                    AJSONValue: TJSONValue): TValue;
+var
+  LOrdinal: Int64;
+var
+  LJSONString: TJSONString;
+  LJSONNumber: TJSONNumber;
+begin
+  with GetEnumTypeContract( ATypeInfo ) do
+  begin
+    if AJSONValue is TJSONNumber then
+    begin
+      LJSONNumber := TJSONNumber( AJSONValue );
+
+      if IntegerMapper.TryResolveOrdinal( LJSONNumber.AsInt, LOrdinal ) then
+        Exit ( TValue.FromOrdinal( ATypeInfo, LOrdinal ) );
+    end
+
+    else if AJSONValue is TJSONString then
+    begin
+      LJSONString := TJSONString( AJSONValue );
+
+      if StringMapper.TryResolveOrdinal( LJSONString.Value, LOrdinal ) then
+        Exit ( TValue.FromOrdinal( ATypeInfo, LOrdinal ) )
+    end
+  end;
+
+  raise Exception.CreateFmt('"%s" is not a valid value for "%s".',
+                            [ AJSONValue.Value, ATypeInfo^.Name ]);
+end;
+
+function TRttiBucket.ToJSONValue(const [ref] AValue: TValue): TJSONValue;
+begin
+  if AValue.IsEmpty then
+    Exit( NewJSONNull() );
+
+  case AValue.Kind of
+    tkInteger, tkInt64:
+      Exit( TJSONNumber.Create( AValue.AsInt64() ) );
+
+    tkFloat:
+      if AValue.TypeInfo = TypeInfo( TDateTime ) then
+      begin
+        var LContentDateTime := TDateTime( AValue.AsExtended() );
+
+        if ( LContentDateTime <= 0 ) then
+          Exit( TJSONNull.Create() );
+
+        Exit( TJSONString.Create( DateTimeToString( LContentDateTime ) ) )
+      end
+      else if AValue.TypeInfo = TypeInfo( TDate ) then
+      begin
+        var LContentDate := TDate( Trunc( AValue.AsExtended() ) );
+
+        if ( LContentDate <= 0 ) then
+          Exit( TJSONNull.Create() );
+
+        Exit( TJSONString.Create( DateTimeToString( LContentDate ) ) )
+      end
+      else
+        Exit( TJSONNumber.Create( AValue.AsExtended() ) );
+
+    tkChar, tkString, tkUString, tkWChar, tkLString, tkWString:
+    begin
+      var LContentStr := AValue.AsString();
+
+      if ( Trim(LContentStr) = EmptyStr ) and
+         ( FMarshallFlags.HasKind( SerializeEmptyAsNull ) ) then
+      begin
+        Exit( TJSONNull.Create() );
+      end;
+
+      Exit( TJSONString.Create( AValue.AsString() ) );
+    end;
+
+    tkEnumeration:
+      Exit( EnumToJSONValue( AValue ) );
+
+    tkDynArray:
+      Exit( ArrayToJSONValue( AValue ) );
+
+    tkClass:
+      Exit( ObjectToJSONValue( AValue ) );
+
+    else
+      Result := TJSONString.Create( AValue.ToString() );
+  end;
+end;
+
+function TRttiBucket.ArrayToJSONValue(const [ref] AValue: TValue): TJSONValue;
+var
+  LCount: Integer;
+  LElement: TValue;
+  LJSONArray: TJSONArray;
+begin
+  LJSONArray := TJSONArray.Create();
+  try
+    LCount := AValue.GetArrayLength - 1;
+    for var I := 0 to LCount do
+    begin
+      LElement := AValue.GetArrayElement( I );
+      LJSONArray.AddElement( ToJSONValue( LElement ) );
+    end;
+    Result := LJSONArray;
+  except
+    LJSONArray.Free();
+    raise;
+  end;
+end;
+
+function TRttiBucket.EnumToJSONValue(const [ref] AValue: TValue): TJSONValue;
+var
+  LOrdinal: Int64;
+var
+  LEnumString: String;
+  LEnumInteger: Integer;
+begin
+  if AValue.TypeInfo = TypeInfo( Boolean ) then
+    Exit( TJSONBool.Create( AValue.AsBoolean() ) );
+
+  if not AValue.IsOrdinal then
+    Exit( TJSONString.Create( AValue.ToString() ) );
+
+  LOrdinal := AValue.AsOrdinal();
+
+  with GetEnumTypeContract( AValue.TypeInfo ) do
+  begin
+    if FMarshallFlags.HasKind( SerializeEnumAsString ) then
+    begin
+      if StringMapper.TryResolveValue( LOrdinal, LEnumString ) then
+        Exit( TJSONString.Create( LEnumString ) )
+      else
+        Exit( TJSONString.Create( AValue.ToString() ) );
+    end
+    else if FMarshallFlags.HasKind( SerializeEnumAsInteger ) then
+    begin
+      if IntegerMapper.TryResolveValue( LOrdinal, LEnumInteger ) then
+        Exit( TJSONNumber.Create( LEnumInteger ) )
+      else
+        Exit( TJSONNumber.Create( LOrdinal ) );
+    end;
+  end;
+
+  Result := NewJSONNull();
+end;
+
+function TRttiBucket.ObjectToJSONValue(const [ref] AValue: TValue): TJSONValue;
+begin
+  Result := ( TJsonMarhshaller.Marshaller.SerializeObject( AValue.AsObject() ) );
+end;
+
+function TRttiBucket.NewJSONNull(): TJSONValue;
+begin
+  Result := TJSONNull.Create();
+end;
+
+
 {$EndRegion 'TRttiBucket'}
+
+{$Region 'TGenericListRttiBucket'}
+
+constructor TGenericListRttiBucket.Create(AOuterRttiType: TRttiType;
+                                          ARttiAccessor: IRttiAccessor;
+                                          AMarshallFlags: TMarshallFlags);
+var
+  LOuterTypeName: String;
+begin
+  LOuterTypeName := AOuterRttiType.Handle^.Name;
+
+  FOuterRttiType := AOuterRttiType;
+  FMarshallFlags := AMarshallFlags;
+  FRttiAccessor  := ARttiAccessor;
+
+  FInnerRttiType     := ExtractInnerType();
+  FCountRttiProperty := AOuterRttiType.GetProperty( 'Count' );
+  FItemRttiProperty  := AOuterRttiType.GetIndexedProperty( 'Items' );
+  FConstructorMethod := ExtractConstructor();
+
+  TGuard.State( ( FInnerRttiType <> nil ),
+                'Could not define the Inner type for "%s".',
+                [ LOuterTypeName ] );
+
+  TGuard.State( ( FCountRttiProperty <> nil ),
+                'Failed to find the Count property of "%s".',
+                  [ LOuterTypeName ] );
+
+  TGuard.State( ( FItemRttiProperty <> nil ),
+                'Failed to find the Item property of "%s".',
+                [ LOuterTypeName ] );
+
+  TGuard.State( ( FConstructorMethod <> nil ),
+                'Failed to find a valid constructor for "%s".',
+                [ LOuterTypeName ] );
+end;
+
+function TGenericListRttiBucket.ToJSONValue(const [ref] AValue: TValue): TJSONValue;
+var
+  LJSONArray: TJSONArray;
+var
+  LGenListInstance: TObject;
+  LItemCount: Integer;
+  LItemValue: TValue;
+  LJSONValue: TJSONValue;
+begin
+  LGenListInstance := AValue.AsObject();
+
+  if not Assigned( LGenListInstance ) then
+  begin
+    if MarshallFlags.HasKind( SerializeEmptyAsNull ) then
+      Exit( NewJSONNull() )
+    else
+      Exit( TJSONArray.Create() );
+  end;
+
+  LJSONArray := TJSONArray.Create();
+  try
+    LItemCount := GetItemCountOf( PByte( LGenListInstance ) );
+
+    for var I := 0 to LItemCount - 1 do
+    begin
+      LItemValue := GetItemValueOf( PByte( LGenListInstance ), I );
+
+      if LItemValue.IsEmpty then
+        Continue;
+
+      LJSONValue := ( inherited ToJSONValue( LItemValue ) );
+      LJSONArray.AddElement( LJSONValue );
+    end;
+
+    Result := LJSONArray;
+  except
+    TJsonMarhshaller.FreeAssigned( LJSONValue );
+    LJSONArray.Free();
+    raise;
+  end;
+end;
+
+function TGenericListRttiBucket.ToRTTIValue(AJSONValue: TJSONValue): TValue;
+var
+  LJSONArray: TJSONArray;
+  LGenListInstance: TObject;
+  LItemValue: TValue;
+begin
+  TGuard.State( ( AJSONValue is TJSONArray ),
+                '"%s" expected to be an array.', [ AJSONValue.ToJSON() ] );
+
+  LJSONArray := TJSONArray( AJSONValue );
+
+  LGenListInstance := CreateNewList();
+
+  for var LJSONValue in LJSONArray do
+  begin
+    LItemValue := ( inherited ToRTTIValue( LJSONValue ) );
+    AddItemFor( LGenListInstance, LItemValue );
+  end;
+
+  Result := TValue.From<TObject>( LGenListInstance );
+end;
+
+function TGenericListRttiBucket.ExtractConstructor(): TRttiMethod;
+var
+  LParameters: TArray<TRttiParameter>;
+  LCreateRttiMethods: TArray<TRttiMethod>;
+  LRttiMethod: TRttiMethod;
+begin
+  LCreateRttiMethods := OuterRttiType.GetMethods( 'Create' );
+  Assert( LCreateRttiMethods <> nil );
+  Assert( Length( LCreateRttiMethods ) > 0 );
+
+  for LRttiMethod in LCreateRttiMethods do
+  begin
+    if not LRttiMethod.IsConstructor then
+      Continue;
+
+    LParameters := LRttiMethod.GetParameters();
+
+    if ( TInfoUtil.IsClass( OuterRttiType.Handle, 'TList' ) ) and
+       ( Length( LParameters ) = 0 ) then
+    begin
+      Exit( LRttiMethod );
+    end;
+
+    if ( Length( LParameters ) = 1 ) and 
+       ( TInfoUtil.IsClass( OuterRttiType.Handle, 'TObjectList' ) ) and
+       ( TInfoUtil.IsClass( LParameters[0].ParamType.Handle, 'Boolean' ) ) then
+    begin
+      Exit( LRttiMethod );
+    end;
+  end;
+
+  Result := LCreateRttiMethods[0];
+end;
+
+function TGenericListRttiBucket.ExtractInnerType(): TRttiType;
+var
+  LAddRttiMethod: TRttiMethod;
+  LItemParameter: TRttiParameter;
+begin
+  LAddRttiMethod := OuterRttiType.GetMethod( 'Add' );
+
+  TGuard.State( ( LAddRttiMethod <> nil ),
+                  'Failed to find Add(...) function for "%s".',
+                  [ OuterRttiType.Name ] );
+
+  Result := LAddRttiMethod.GetParameters()[0].ParamType;
+  FAddRttiMethod := LAddRttiMethod;
+end;
+
+function TGenericListRttiBucket.CreateNewList(): TObject;
+var
+  LValue: TValue;
+  LInstance: TObject;
+  LParameters: Array Of TValue;
+begin
+  LInstance := nil;
+
+  if TInfoUtil.IsClass( OuterRttiType.Handle, 'TList' ) then
+    LParameters := []
+
+  // Permitir quando for TObjectList<T>, que a lista seja dona dos
+  // objetos adicionados.
+  else if TInfoUtil.IsClass( OuterRttiType.Handle, 'TObjectList' ) then
+    LParameters := [ TValue.From<Boolean>( True ) ];
+  
+  LValue := FConstructorMethod.Invoke( OuterRttiType.AsInstance.MetaclassType, 
+                                       LParameters );
+
+  if not LValue.IsEmpty then
+    LInstance := LValue.AsObject();
+ 
+  Result := LInstance;
+end;
+
+function TGenericListRttiBucket.GetItemCountOf(AInstance: Pointer): Integer;
+begin
+  Result := ( FCountRttiProperty.GetValue( AInstance ).AsInteger );
+end;
+
+function TGenericListRttiBucket.GetItemValueOf(AInstance: Pointer;
+                                               AIndex: Integer): TValue;
+begin
+  Result := ( FItemRttiProperty.GetValue( AInstance,
+                                          [ TValue.From<Integer>( AIndex )  ] ) );
+end;
+
+procedure TGenericListRttiBucket.AddItemFor(const [ref] AObj: TObject;
+                                            AValue: TValue);
+begin
+  FAddRttiMethod.Invoke( AObj, [ AValue ] );
+end;
+
+{$EndRegion 'TGenericListRttiBucket'}
 
 {$Region 'TMarshallFlags'}
 
@@ -1421,13 +1686,13 @@ begin
     Exit( LLocalMarshallFlags );
 
   LLocalMarshallFlags := TMarshallFlags.Create();
-  LLocalMarshallFlags.CloneFrom( TJson2.FSingleton.GlobalMarhsallFlags );
+  LLocalMarshallFlags.CloneFrom( TJsonMarhshaller.Marshaller.GlobalMarhsallFlags );
   Result := LLocalMarshallFlags;
 end;
 
 {$EndRegion 'TTypeFlagsFactory'}
 
-{$Region 'Exposed static functions' }
+{$Region 'TJson2' }
 
 class function TJson2.JsonArrayToList<T>(AJSONArray: TJSONArray): TList<T>;
 var
@@ -1451,7 +1716,7 @@ begin
 
     Result := LObjList;
   except
-    FreeAssigned( LObjList );
+    TJsonMarhshaller.FreeAssigned( LObjList );
     raise;
   end;
 end;
@@ -1468,10 +1733,11 @@ begin
                                  [ AJSONText ] );
 
     LJSONObject := TJSONObject( LJSONValue );
-    Result := FSingleton.DeserializeObject( LJSONObject,
-                                            TypeInfo( T ) ) as T;
+
+    Result := TJsonMarhshaller.Marshaller.DeserializeObject( LJSONObject, 
+                                                             TypeInfo( T ) ) as T;
   finally
-    FreeAssigned( LJSONValue );
+    TJsonMarhshaller.FreeAssigned( LJSONValue );
   end;
 end;
 
@@ -1490,69 +1756,75 @@ end;
 
 class function TJson2.ObjectToJsonText(AObj: TObject): String;
 var
-  LJSONObject: TJSONObject;
+  LJSONValue: TJSONValue;
 begin
-  LJSONObject := TJSONObject( FSingleton.SerializeObject( AObj ) );
+  LJSONValue := TJsonMarhshaller.Marshaller.SerializeObject( AObj );
   try
-    Result := LJSONObject.ToString();
+    Result := LJSONValue.ToString();
   finally
-    FreeAssigned( LJSONObject );
+    TJsonMarhshaller.FreeAssigned( LJSONValue );
   end;
 end;
 
 class function TJson2.JsonToObject<T>(AJSONObject: TJSONObject): T;
 begin
-  Result := ( FSingleton.Deserialize<T>( AJSONObject ) );
+  Result := ( TJsonMarhshaller.Marshaller.Deserialize<T>( AJSONObject ) );
 end;
 
 class function TJson2.ObjectToJson<T>(AObj: T): TJSONObject;
 begin
-  Result := ( FSingleton.Serialize<T>( AObj ) );
+  Result := ( TJsonMarhshaller.Marshaller.Serialize<T>( AObj ) );
+end;
+
+class procedure TJson2.ConfigureBucket(AKinds: TMarshallOptionKindArray);
+begin
+  raise Exception.CreateFmt('JSON2Obj "%s" does not yet support dynamic configuration of MarshallFlags in Bucket.', [ JSON2OBJ_VERSION ] );
+end;
+
+class procedure TJson2.ConfigureType(AKinds: TMarshallOptionKindArray);
+begin
+  raise Exception.CreateFmt('JSON2Obj "%s" does not yet support dynamic configuration of MarshallFlags in Types.', [ JSON2OBJ_VERSION ] );
+end;
+
+class procedure TJson2.ConfigureGlobal(AKinds: TMarshallOptionKindArray);
+begin
+  TJsonMarhshaller.Marshaller.Configure( AKinds );
 end;
 
 class procedure TJson2.Invalidate();
 begin
-  FSingleton.InvalidateCache();
+  TJsonMarhshaller.Marshaller.InvalidateCache();
 end;
 
-class constructor TJson2.Create();
+{$EndRegion 'TJson2' }
+
+{$Region 'TInfoUtil'}
+
+class function TInfoUtil.IsClass(ATypeInfo: PTypeInfo; AName: String): Boolean;
 begin
-  FSingleton := TJson2.Create();
+  if ATypeInfo = nil then
+    Exit( False );
+
+  Result := String( ATypeInfo.Name ).StartsWith( AName, True );
 end;
 
-class destructor TJson2.Destroy();
+{$EndRegion 'TInfoUtil'}
+
+{$Region 'TGuard'}
+
+class procedure TGuard.Fail(AMessage: String;
+                            Args: array of Const);
 begin
-  FSingleton.Free();
+  State( False, AMessage, Args );
 end;
 
-{$EndRegion 'Exposed static functions' }
-
-{ TGenericListRttiBucket }
-
-constructor TGenericListRttiBucket.Create(AInnerRttiType: TRttiType;
-                                          AOuterRttiType: TRttiType;
-                                          ARttiAccessor: IRttiAccessor);
+class procedure TGuard.State(ACondition: Boolean;
+                             AMessage: String;
+                             Args: array of Const);
 begin
-  inherited Create( AInnerRttiType, AOuterRttiType,
-                    ARttiAccessor, False, False );
-
-  FCountRttiProperty := AOuterRttiType.GetProperty( 'Count' );
-  Assert( FCountRttiProperty <> nil );
-
-  FItemRttiProperty := AOuterRttiType.GetIndexedProperty( 'Items' );
-  Assert( FItemRttiProperty <> nil );
+  Assert( ACondition, Format( AMessage, Args ) );
 end;
 
-function TGenericListRttiBucket.GetItemCountOf(AInstance: Pointer): Integer;
-begin
-  Result := ( FCountRttiProperty.GetValue( AInstance ).AsInteger );
-end;
-
-function TGenericListRttiBucket.GetItemValueOf(AInstance: Pointer;
-                                               AIndex: Integer): TValue;
-begin
-  Result := ( FItemRttiProperty.GetValue( AInstance,
-                                          [ TValue.From<Integer>( AIndex )  ] ) );
-end;
+{$EndRegion 'TGuard'}
 
 end.
